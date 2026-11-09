@@ -1,2 +1,305 @@
-EMULATOR BOOT: NO BOOT - sys.boot_completed never reached 1 within the 12-minute bounded wait (see sections 3-4 + emulator console log tail)
+ROUNDTRIP: IDENTITY LOST - android_id mismatch (boot1 bf173aaea96c7698, boot2 25e5e4ecaa8c0879); marker mismatch (expected pv1-20261109143251-afa9e1b2, got '<missing/empty>')
+EMULATOR BOOT: BOOTED - roundtrip job (boot 1: sections 3-4; graceful pack: sections 5-6; wipe + clean-room restore + boot 2: section 7); the roundtrip verdict above is this job's permanence proof and no artifact shelf was used; PACKED=1 (state packed as artifact phonevault-avd-state, section 6); MARKER_FAILED (marker: FAILED - see section 4)
+
+########## .pv-evidence-final/00-baseline.txt ##########
+PHONEVAULT EMULATOR BOOT TEST v3.5
+v3.5 changes over v3.4.2, each from the run No.9 / restore-diagnosis evidence: (1) GRACEFUL PACK (hypothesis H5) - the v3.4.2 shutdown checked only the launcher wrapper PID after one fixed sleep 5 and packed even after a kill -9; QEMU attaches userdata + encryptionkey with cache=unsafe, so guest writes (above all FBE key finalization at first boot) can miss the qcow2 entirely - and every restore boot then first-boots and mints a NEW encryptionkey overlay (run No.9, and diagnosis attempts A replica + B clean room: identity LOST in all three, files bit-identical, disk chain healthy). v3.5: adb emu kill, then a bounded pgrep poll until the launcher AND every qemu-system process are gone; NO hard kill on the pack path; the pack is SKIPPED when a clean stop is not proven. (2) ROUNDTRIP MODE - the self-contained permanence proof in ONE job: fresh boot, marker write+verify, graceful pack to a LOCAL tar (no artifact), wipe the AVD folder completely, restore from that tar into a clean hand-made folder (certificate read from the tar itself), boot WITHOUT -wipe-data, identity verdict with both android_ids + marker readback. It never touches the artifact shelf, so it separates pack-side causes (H5) from shelf/restore-side causes in a single run. (3) RESTORE = PINNED + CERTIFICATE-VERIFIED - the shelf is poisoned (run No.9 uploaded a wrong-phone pack under the same artifact name), so restore tries the dispatch-pinned run first and accepts a candidate pack ONLY when its own phonevault-version.txt passes: android_id present + marker_ok=1, SHA-256 recomputed from the downloaded tar over the certificate largest_userdata_file equals the certificate value, and (when supplied at dispatch) android_id equals the expected value. Expected values are read from files/inputs at runtime - no hash or ID is written into this workflow. (4) VERSIONS RECORDED - emulator -version is captured WITH stderr (v3.4.2 discarded stderr and sealed an EMPTY emulator_version), plus emulator Pkg.Revision and system-image Pkg.Revision, into every pack certificate. (5) Restore mode re-packs ONLY on a SAME PHONE verdict. Unchanged from v3.4.2: ANDROID_AVD_HOME pin, pack by discovery, marker via adb push, honest verdict derivation, bounded waits.
+run_started_utc: 2026-11-09T14:30:37Z
+workflow_run_number: 11
+workflow_run_id: 42635350272
+workflow_run_attempt: 1
+mode: roundtrip (push-triggered runs are always fresh; restore and roundtrip are dispatch-only)
+note: artifact transport is NOT the vault - DESIGN.md section 5 chunk_vault/HF wiring replaces it for real sessions (build step 3)
+===== 0 runner / kvm gate =====
+RUNNER_OS=Linux RUNNER_ARCH=X64 ImageOS=ubuntu24 ImageVersion=20261101.360.1
+Linux runnervm7aw5e 7.0.0-1017-azure #17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+2
+               total        used        free      shared  buff/cache   available
+Mem:           7.7Gi       842Mi       6.3Gi        44Mi       890Mi       6.9Gi
+Swap:          3.0Gi          0B       3.0Gi
+/dev/root        72G   59G   14G  82% /
+crw-rw---- 1 root kvm 10, 232 Nov  9 14:30 /dev/kvm
+KVM_GATE: PRESENT
+===== 0b kvm permissions (standard GitHub emulator step) =====
+KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
+crw-rw-rw- 1 root kvm 10, 232 Nov  9 14:30 /dev/kvm
+kvm_touch_rc=0 (0 = runner user can open the device)
+
+########## .pv-evidence-final/01-install.txt ##########
+===== 1 sdkmanager installs (emulator + platform-tools + system image) =====
+ANDROID_HOME=/usr/local/lib/android/sdk
+sdkmanager=/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+yes: standard output: Broken pipe
+licenses_rc=1
+Loading package information...                                                  Loading local repository...                                                     [                                       ] 3% Loading local repository...        [                                       ] 3% Fetch remote repository...         [=                                      ] 3% Fetch remote repository...         [=                                      ] 4% Fetch remote repository...         [=                                      ] 5% Fetch remote repository...         [==                                     ] 5% Fetch remote repository...         [==                                     ] 6% Fetch remote repository...         [==                                     ] 7% Fetch remote repository...         [==                                     ] 7% Computing updates...               [===                                    ] 8% Computing updates...               [===                                    ] 10% Computing updates...              [===                                    ] 10% Installing Android Emulator       [===                                    ] 10% Downloading emulator-linux_x64-167[====                                   ] 10% Downloading emulator-linux_x64-167[====                                   ] 11% Downloading emulator-linux_x64-167[====                                   ] 12% Downloading emulator-linux_x64-167[=====                                  ] 13% Downloading emulator-linux_x64-167[=====                                  ] 14% Downloading emulator-linux_x64-167[=====                                  ] 15% Downloading emulator-linux_x64-167[======                                 ] 15% Downloading emulator-linux_x64-167[======                                 ] 16% Downloading emulator-linux_x64-167[======                                 ] 17% Downloading emulator-linux_x64-167[=======                                ] 18% Downloading emulator-linux_x64-167[=======                                ] 19% Downloading emulator-linux_x64-167[=======                                ] 20% Downloading emulator-linux_x64-167[========                               ] 20% Downloading emulator-linux_x64-167[========                               ] 21% Downloading emulator-linux_x64-167[========                               ] 21% Unzipping...                      [========                               ] 21% Unzipping... emulator/            [========                               ] 21% Unzipping... emulator/resources/  [========                               ] 21% Unzipping... emulator/qsn         [========                               ] 21% Unzipping... emulator/emulator    [========                               ] 21% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/bin64/      [========                               ] 22% Unzipping... emulator/qemu/       [========                               ] 22% Unzipping... emulator/NOTICE.txt  [========                               ] 22% Unzipping... emulator/crashpad_han[========                               ] 22% Unzipping... emulator/source.prope[========                               ] 22% Unzipping... emulator/nimble_bridg[========                               ] 22% Unzipping... emulator/LICENSE     [========                               ] 22% Unzipping... emulator/lib/        [========                               ] 22% Unzipping... emulator/qemu-img    [========                               ] 22% Unzipping... emulator/include/    [========                               ] 22% Unzipping... emulator/NOTICE.csv  [========                               ] 22% Unzipping... emulator/lib64/      [========                               ] 22% Unzipping... emulator/emulator-che[========                               ] 22% Unzipping... emulator/crashreport [========                               ] 22% Unzipping... emulator/mksdcard    [========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/sk[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/po[========                               ] 22% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/sk[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/bin64/e2fsck[=========                              ] 23% Unzipping... emulator/bin64/fsck.e[=========                              ] 23% Unzipping... emulator/bin64/tune2f[=========                              ] 23% Unzipping... emulator/bin64/resize[=========                              ] 23% Unzipping... emulator/bin64/mkfs.e[=========                              ] 23% Unzipping... emulator/qemu/linux-x[=========                              ] 24% Unzipping... emulator/qemu/linux-x[=========                              ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 25% Unzipping... emulator/lib/emulator[==========                             ] 25% Unzipping... emulator/lib/rtc_serv[==========                             ] 25% Unzipping... emulator/lib/advanced[==========                             ] 25% Unzipping... emulator/lib/cmake/  [==========                             ] 25% Unzipping... emulator/lib/emulator[==========                             ] 25% Unzipping... emulator/lib/control_[==========                             ] 25% Unzipping... emulator/lib/emulated[==========                             ] 25% Unzipping... emulator/lib/rtc_serv[==========                             ] 25% Unzipping... emulator/lib/emu-orig[==========                             ] 25% Unzipping... emulator/lib/hardware[==========                             ] 25% Unzipping... emulator/lib/pkgconfi[==========                             ] 25% Unzipping... emulator/lib/pc-bios/[==========                             ] 25% Unzipping... emulator/lib/snapshot[==========                             ] 25% Unzipping... emulator/lib/adb_serv[==========                             ] 25% Unzipping... emulator/lib/hostapd.[==========                             ] 25% Unzipping... emulator/lib/grpc_end[==========                             ] 25% Unzipping... emulator/lib/ca-bundl[==========                             ] 25% Unzipping... emulator/lib/ui_contr[==========                             ] 25% Unzipping... emulator/lib/snapshot[==========                             ] 25% Unzipping... emulator/lib/ice_conf[==========                             ] 25% Unzipping... emulator/lib/libflatb[==========                             ] 26% Unzipping... emulator/lib/libflatb[==========                             ] 26% Unzipping... emulator/lib/emulator[==========                             ] 26% Unzipping... emulator/lib/waterfal[==========                             ] 26% Unzipping... emulator/lib/emulated[==========                             ] 26% Unzipping... emulator/lib/cmake/fl[==========                             ] 26% Unzipping... emulator/lib/pkgconfi[==========                             ] 26% Unzipping... emulator/lib/pc-bios/[==========                             ] 26% Unzipping... emulator/include/flat[==========                             ] 26% Unzipping... emulator/lib64/libgli[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/qt/   [==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libgfx[==========                             ] 26% Unzipping... emulator/lib64/gles_l[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/vulkan[==========                             ] 26% Unzipping... emulator/lib64/gles_s[==========                             ] 26% Unzipping... emulator/lib64/libemu[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libtcm[==========                             ] 26% Unzipping... emulator/lib64/libima[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libabs[==========                             ] 26% Unzipping... emulator/lib64/gles_a[==========                             ] 26% Unzipping... emulator/lib64/libsha[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 26% Unzipping... emulator/lib64/qt/lib[==========                             ] 26% Unzipping... emulator/lib64/qt/tra[==========                             ] 26% Unzipping... emulator/lib64/qt/plu[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/lib[===========                            ] 28% Unzipping... emulator/lib64/qt/lib[===========                            ] 29% Unzipping... emulator/lib64/qt/lib[===========                            ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/tra[============                           ] 30% Unzipping... emulator/lib64/qt/plu[============                           ] 30% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/gles_s[============                           ] 32% Unzipping... emulator/lib64/gles_a[=============                          ] 33% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Installing Google APIs Intel x86_6[=====================                  ] 55% Downloading x86_64-34_r14.zip... e[======================                 ] 55% Downloading x86_64-34_r14.zip... e[======================                 ] 56% Downloading x86_64-34_r14.zip... e[======================                 ] 57% Downloading x86_64-34_r14.zip... e[=======================                ] 58% Downloading x86_64-34_r14.zip... e[=======================                ] 59% Downloading x86_64-34_r14.zip... e[=======================                ] 60% Downloading x86_64-34_r14.zip... e[========================               ] 60% Downloading x86_64-34_r14.zip... e[========================               ] 61% Downloading x86_64-34_r14.zip... e[========================               ] 62% Downloading x86_64-34_r14.zip... e[=========================              ] 63% Downloading x86_64-34_r14.zip... e[=========================              ] 64% Downloading x86_64-34_r14.zip... e[=========================              ] 65% Downloading x86_64-34_r14.zip... e[==========================             ] 65% Downloading x86_64-34_r14.zip... e[==========================             ] 66% Downloading x86_64-34_r14.zip... e[==========================             ] 66% Unzipping... emulator/lib64/gles_a[==========================             ] 66% Unzipping... x86_64/NOTICE.txt    [==========================             ] 66% Unzipping... x86_64/VerifiedBootPa[==========================             ] 66% Unzipping... x86_64/advancedFeatur[==========================             ] 66% Unzipping... x86_64/build.prop    [==========================             ] 66% Unzipping... x86_64/encryptionkey.[==========================             ] 66% Unzipping... x86_64/kernel-ranchu [==========================             ] 66% Unzipping... x86_64/ramdisk.img   [==========================             ] 66% Unzipping... x86_64/source.propert[==========================             ] 66% Unzipping... x86_64/system.img    [==========================             ] 67% Unzipping... x86_64/system.img    [===========================            ] 68% Unzipping... x86_64/system.img    [===========================            ] 69% Unzipping... x86_64/system.img    [===========================            ] 70% Unzipping... x86_64/system.img    [============================           ] 70% Unzipping... x86_64/system.img    [============================           ] 71% Unzipping... x86_64/system.img    [============================           ] 72% Unzipping... x86_64/system.img    [=============================          ] 73% Unzipping... x86_64/system.img    [=============================          ] 74% Unzipping... x86_64/system.img    [=============================          ] 75% Unzipping... x86_64/system.img    [==============================         ] 75% Unzipping... x86_64/system.img    [==============================         ] 76% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/userdata.img  [==============================         ] 77% Unzipping... x86_64/vendor.img    [==============================         ] 77% Unzipping... x86_64/data/local.pro[==============================         ] 77% Unzipping... x86_64/data/misc/Gold[==============================         ] 77% Unzipping... x86_64/data/misc/apns[==============================         ] 77% Unzipping... x86_64/data/misc/emul[==============================         ] 77% Unzipping... x86_64/data/misc/gcec[==============================         ] 77% Unzipping... x86_64/data/misc/mode[==============================         ] 77% Unzipping... x86_64/data/misc/pixe[==============================         ] 78% Unzipping... x86_64/data/misc/pixe[=======================================] 100% Unzipping... x86_64/data/misc/pix
+
+install_rc=0
+/usr/local/lib/android/sdk/emulator/emulator
+NOTICE.txt
+VerifiedBootParams.textproto
+advancedFeatures.ini
+build.prop
+data
+encryptionkey.img
+kernel-ranchu
+package.xml
+-- version capture (v3.5: these values are sealed into every pack certificate; run No.6's emulator_version was EMPTY) --
+/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64: error while loading shared libraries: libpulse.so.0: cannot open shared object file: No such file or directory
+emulator_pkg_revision=37.2.13
+system_image_pkg_revision=14
+  emulator                                    | 37.2.13       | Android Emulator                           | emulator                                   
+  system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
+
+########## .pv-evidence-final/02-avd.txt ##########
+===== 2 create AVD factoryphone (fixed PhoneVault profile) =====
+avd_home=/home/runner/.android/avd
+----- 2a pre-create diagnostics -----
+-- avdmanager list device, filtered for pixel_6 --
+---------
+id: 28 or "pixel_6"
+    Name: Pixel 6
+    OEM : Google
+---------
+id: 29 or "pixel_6_pro"
+    Name: Pixel 6 Pro
+    OEM : Google
+---------
+id: 30 or "pixel_6a"
+    Name: Pixel 6a
+    OEM : Google
+pixel_6_listed=1
+-- installed system-image dir --
+total 4364352
+drwxr-xr-x 3 runner runner       4096 Nov  9 14:31 .
+drwxr-xr-x 3 runner runner       4096 Nov  9 14:31 ..
+-rw-r--r-- 1 runner runner   19603789 Nov  9 14:30 NOTICE.txt
+-rw-r--r-- 1 runner runner        356 Nov  9 14:30 VerifiedBootParams.textproto
+-rw-r--r-- 1 runner runner        689 Nov  9 14:30 advancedFeatures.ini
+-rw-r--r-- 1 runner runner       5008 Nov  9 14:30 build.prop
+drwxr-xr-x 3 runner runner       4096 Nov  9 14:31 data
+-rw-r--r-- 1 runner runner   18874368 Nov  9 14:30 encryptionkey.img
+-rw-r--r-- 1 runner runner   17374688 Nov  9 14:31 kernel-ranchu
+-rw-r--r-- 1 runner runner      18749 Nov  9 14:31 package.xml
+-rw-r--r-- 1 runner runner    1820484 Nov  9 14:31 ramdisk.img
+-rw-r--r-- 1 runner runner        357 Nov  9 14:31 source.properties
+-rw-r--r-- 1 runner runner 4306501632 Nov  9 14:31 system.img
+-rw-r--r-- 1 runner runner    1048576 Nov  9 14:31 userdata.img
+-rw-r--r-- 1 runner runner  103809024 Nov  9 14:31 vendor.img
+-- sdkmanager --list_installed, system-images lines --
+  system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
+----- 2b create attempts (FULL avdmanager output in section 02b) -----
+attempt1: avdmanager_rc=0 device=pixel_6
+avdmanager_rc=0
+device_used=pixel_6
+config_path=/home/runner/.android/avd/factoryphone.avd/config.ini
+hw.device.name=pixel_6
+image.sysdir.1=system-images/android-34/google_apis/x86_64/
+hw.ramSize=2048
+hw.cpu.ncore=2
+disk.dataPartition.size=4096M
+-- AVD home contents after creation --
+factoryphone.avd
+factoryphone.ini
+full avdmanager output (both attempts, uncut): section 02b (02b-avdmanager.txt)
+
+########## .pv-evidence-final/02b-avdmanager.txt ##########
+--- create attempt 1: -d pixel_6 ---
+Loading local repository...                                                     [=========                              ] 25% Loading local repository...       [=========                              ] 25% Fetch remote repository...        [=======================================] 100% Fetch remote repository...       
+Auto-selecting single ABI x86_64
+
+########## .pv-evidence-final/02c-restore.txt ##########
+===== 2c restore state (restore mode only) =====
+mode=roundtrip - no artifact restore in this step (fresh boots a new phone; roundtrip restores from this job's own local tar in the roundtrip step)
+
+########## .pv-evidence-final/03-boot.txt ##########
+===== 3 boot emulator headless (bounded wait 12 min) =====
+mode=roundtrip wipe_flag='-wipe-data'
+emulator_pid=2482
+* daemon not running; starting now at tcp:5037
+* daemon started successfully
+wait_for_device_rc=0 (124 = timed out after 90s; the bounded poll below still runs)
+poll 1: sys.boot_completed=''
+poll 2: sys.boot_completed=''
+poll 3: sys.boot_completed=''
+poll 4: sys.boot_completed='1'
+BOOTED_FLAG=1
+List of devices attached
+emulator-5554	device
+
+boot_wait_result: sys.boot_completed=1 reached
+
+########## .pv-evidence-final/04-capture.txt ##########
+===== 4 capture identity + marker (only if booted) =====
+android_id: bf173aaea96c7698
+model: sdk_gphone64_x86_64
+device: emu64xa
+android_release: 14
+android_sdk: 34
+phonevault-marker-local.txt: 1 file pushed, 0 skipped. 0.3 MB/s (28 bytes in 0.000s)
+marker_push_rc=0
+marker_token: pv1-20261109143251-afa9e1b2
+marker_readback: pv1-20261109143251-afa9e1b2
+MARKER_OK=1 - marker pushed via adb push and verified by readback
+-rw-r--r-- 1 runner runner 1367102 Nov  9 14:32 phone-boot.png
+CAPTURE_OK=1
+
+########## .pv-evidence-final/05-shutdown.txt ##########
+===== 5 shutdown (v3.5 GRACEFUL - the pack waits for a provably dead emulator) =====
+OK: killing emulator, bye bye
+OK
+emu_kill_rc=0
+shutdown poll 1: still alive: launcher_pid=2482 qemu-system_pids=2482 2780 
+graceful stop confirmed: launcher + qemu-system all gone at poll 2 (~5s after emu kill)
+GRACEFUL_STOP=1
+host sync done (host page cache flushed before tar)
+/dev/root        72G   65G  7.4G  90% /
+793M	/home/runner/.android/avd/factoryphone.avd
+total 793M
+-rw------- 1 runner runner    0 Nov  9 14:32 bootcompleted.ini
+-rw-r--r-- 1 runner runner  66M Nov  9 14:31 cache.img
+-rw-r--r-- 1 runner runner 193K Nov  9 14:31 cache.img.qcow2
+-rw-r--r-- 1 runner runner 3.7K Nov  9 14:31 config.ini
+-rw-r--r-- 1 runner runner  293 Nov  9 14:31 emu-launch-params.txt
+-rw-r--r-- 1 runner runner  113 Nov  9 14:32 emulator-user.ini
+-rw------- 1 runner runner  18M Nov  9 14:31 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.9M Nov  9 14:31 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.3K Nov  9 14:31 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.8M Nov  9 14:31 initrd
+drwxr-xr-x 3 runner runner 4.0K Nov  9 14:32 modem_simulator
+-rw-r--r-- 1 runner runner    0 Nov  9 14:31 multiinstance.lock
+-rw-r--r-- 1 runner runner   38 Nov  9 14:31 netsim.ini
+-rw-r--r-- 1 runner runner    1 Nov  9 14:31 qemu-version.txt
+-rw-r--r-- 1 runner runner    0 Nov  9 14:31 read-snapshot.txt
+drwxr-xr-x 2 runner runner 4.0K Nov  9 14:32 tmpAdbCmds
+-rw------- 1 runner runner 6.2M Nov  9 14:31 userdata-qemu.img
+-rw-r--r-- 1 runner runner 760M Nov  9 14:32 userdata-qemu.img.qcow2
+-rw-r--r-- 1 runner runner    9 Nov  9 14:31 version_num.cache
+
+########## .pv-evidence-final/06-pack.txt ##########
+===== 6 pack AVD state (artifact transport - NOT the vault) =====
+-- AVD folder listing BEFORE pack (discovery evidence; no state filename is assumed) --
+total 793M
+-rw------- 1 runner runner    0 Nov  9 14:32 bootcompleted.ini
+-rw-r--r-- 1 runner runner  66M Nov  9 14:31 cache.img
+-rw-r--r-- 1 runner runner 193K Nov  9 14:31 cache.img.qcow2
+-rw-r--r-- 1 runner runner 3.7K Nov  9 14:31 config.ini
+-rw-r--r-- 1 runner runner  293 Nov  9 14:31 emu-launch-params.txt
+-rw-r--r-- 1 runner runner  113 Nov  9 14:32 emulator-user.ini
+-rw------- 1 runner runner  18M Nov  9 14:31 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.9M Nov  9 14:31 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.3K Nov  9 14:31 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.8M Nov  9 14:31 initrd
+drwxr-xr-x 3 runner runner 4.0K Nov  9 14:32 modem_simulator
+-rw-r--r-- 1 runner runner    0 Nov  9 14:31 multiinstance.lock
+-rw-r--r-- 1 runner runner   38 Nov  9 14:31 netsim.ini
+-rw-r--r-- 1 runner runner    1 Nov  9 14:31 qemu-version.txt
+-rw-r--r-- 1 runner runner    0 Nov  9 14:31 read-snapshot.txt
+drwxr-xr-x 2 runner runner 4.0K Nov  9 14:32 tmpAdbCmds
+-rw------- 1 runner runner 6.2M Nov  9 14:31 userdata-qemu.img
+-rw-r--r-- 1 runner runner 760M Nov  9 14:32 userdata-qemu.img.qcow2
+-rw-r--r-- 1 runner runner    9 Nov  9 14:31 version_num.cache
+pack discover: userdata candidate absent: userdata.img
+userdata candidates present: userdata-qemu.img.qcow2 userdata-qemu.img
+pack: absent, skipped: sdcard.img
+-- phonevault-version.txt written into the pack --
+avd_name=factoryphone
+system_image=system-images;android-34;google_apis;x86_64
+emulator_version=/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64: error while loading shared libraries: libpulse.so.0: cannot open shared object file: No such file or directory
+emulator_pkg_revision=37.2.13
+system_image_revision=14
+session=1
+packed_utc=2026-11-09T14:33:02Z
+android_id=bf173aaea96c7698
+marker_token=pv1-20261109143251-afa9e1b2
+marker_ok=1
+largest_userdata_file=userdata-qemu.img.qcow2
+largest_userdata_size_bytes=795934720
+largest_userdata_sha256=612a342ecf345ab4d8b23a608dec106335d351f3b784a9d7e4f62b7e4a92d9d5
+packed_file: userdata-qemu.img.qcow2 795934720 bytes
+packed_file: userdata-qemu.img 6488064 bytes
+packed_file: encryptionkey.img.qcow2 1900544 bytes
+packed_file: encryptionkey.img 18874368 bytes
+packed_file: config.ini 3783 bytes
+packed_file: emulator-user.ini 113 bytes
+packed_file: hardware-qemu.ini 4305 bytes
+packed_file: phonevault-version.txt (this file)
+pack set: userdata-qemu.img.qcow2 userdata-qemu.img encryptionkey.img.qcow2 encryptionkey.img config.ini emulator-user.ini hardware-qemu.ini phonevault-version.txt
+excluded by construction (never in the candidate list): cache.img, cache.img.qcow2, snapshots/, *.lock
+tar_rc=0
+-rw-r--r-- 1 runner runner 786M Nov  9 14:33 phonevault-state.tar
+-- tar contents --
+userdata-qemu.img.qcow2
+userdata-qemu.img
+encryptionkey.img.qcow2
+encryptionkey.img
+config.ini
+emulator-user.ini
+hardware-qemu.ini
+phonevault-version.txt
+PACK_OK=1 - roundtrip mode: pack tar stays LOCAL (no .pv-pack-ok flag, no artifact upload); the roundtrip step restores from this exact tar
+
+########## .pv-evidence-final/07-roundtrip.txt ##########
+===== 7 roundtrip: wipe + clean-room restore from THIS JOB's local tar + boot 2 =====
+-- certificate read from the tar itself (the artifact shelf is never touched in roundtrip mode) --
+cert_extract_rc=0
+avd_name=factoryphone
+system_image=system-images;android-34;google_apis;x86_64
+emulator_version=/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64: error while loading shared libraries: libpulse.so.0: cannot open shared object file: No such file or directory
+emulator_pkg_revision=37.2.13
+system_image_revision=14
+session=1
+packed_utc=2026-11-09T14:33:02Z
+android_id=bf173aaea96c7698
+marker_token=pv1-20261109143251-afa9e1b2
+marker_ok=1
+largest_userdata_file=userdata-qemu.img.qcow2
+largest_userdata_size_bytes=795934720
+largest_userdata_sha256=612a342ecf345ab4d8b23a608dec106335d351f3b784a9d7e4f62b7e4a92d9d5
+packed_file: userdata-qemu.img.qcow2 795934720 bytes
+packed_file: userdata-qemu.img 6488064 bytes
+packed_file: encryptionkey.img.qcow2 1900544 bytes
+packed_file: encryptionkey.img 18874368 bytes
+packed_file: config.ini 3783 bytes
+packed_file: emulator-user.ini 113 bytes
+packed_file: hardware-qemu.ini 4305 bytes
+packed_file: phonevault-version.txt (this file)
+roundtrip tar integrity: recomputed largest-userdata SHA-256 == certificate - YES
+roundtrip_id_boot1 (from this job's certificate)=bf173aaea96c7698
+roundtrip_marker_expected (from certificate)=pv1-20261109143251-afa9e1b2
+-- WIPE the AVD folder completely (after this, the phone exists ONLY inside the local tar) --
+total 8
+drwxr-xr-x 2 runner runner 4096 Nov  9 14:33 .
+drwxr-xr-x 3 runner runner 4096 Nov  9 14:31 ..
+-- hand-make a clean AVD folder (diagnosis attempt B shape: no avdmanager run, no stray template userdata.img) --
+avd.ini.encoding=UTF-8
+path=/home/runner/.android/avd/factoryphone.avd
+path.rel=avd/factoryphone.avd
+target=android-34
+-- untar the local pack into the clean folder --
+untar_rc=0
+total 786M
+-rw-r--r-- 1 runner runner 3.7K Nov  9 14:31 config.ini
+-rw-r--r-- 1 runner runner  113 Nov  9 14:32 emulator-user.ini
+-rw------- 1 runner runner  18M Nov  9 14:31 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.9M Nov  9 14:31 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.3K Nov  9 14:31 hardware-qemu.ini
+-rw-r--r-- 1 runner runner  993 Nov  9 14:33 phonevault-version.txt
+-rw------- 1 runner runner 6.2M Nov  9 14:31 userdata-qemu.img
+-rw-r--r-- 1 runner runner 760M Nov  9 14:32 userdata-qemu.img.qcow2
+-- boot 2 WITHOUT -wipe-data (restore semantics: the restored state must be honored, not reset) --
+roundtrip_emulator_pid=2885
+wait_for_device_rc=0
+boot2 poll 1: sys.boot_completed=''
+boot2 poll 2: sys.boot_completed=''
+boot2 poll 3: sys.boot_completed=''
+boot2 poll 4: sys.boot_completed='1'
+roundtrip_id_boot1=bf173aaea96c7698
+roundtrip_id_boot2=25e5e4ecaa8c0879
+roundtrip_marker_expected=pv1-20261109143251-afa9e1b2
+roundtrip_marker_readback=
+roundtrip_verdict: ROUNDTRIP: IDENTITY LOST - android_id mismatch (boot1 bf173aaea96c7698, boot2 25e5e4ecaa8c0879); marker mismatch (expected pv1-20261109143251-afa9e1b2, got '<missing/empty>')
+OK: killing emulator, bye bye
+OK
+roundtrip_emu_kill_rc=0
+roundtrip emulator stopped at poll 2
 
