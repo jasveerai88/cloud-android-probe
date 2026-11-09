@@ -1,0 +1,211 @@
+name: cloud-android-emulator
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/emulator.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phonevault-emulator
+  cancel-in-progress: false
+
+jobs:
+  emulator-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Boot test (SDK emulator, PhoneVault v3 - boot No.1, no vault restore)
+        shell: bash
+        run: |
+          set +e
+          OUT=emulator-output.txt
+          EVID=.pv-evidence
+          mkdir -p "$EVID"
+          {
+            echo "PHONEVAULT EMULATOR BOOT TEST v3"
+            echo "date_utc: $(date -u +%FT%TZ)"
+            echo "note: this run does NOT restore vault state - vault wiring comes after boot is proven (DESIGN.md section 9, step 1)"
+            echo "===== 0 runner / kvm gate ====="
+            echo "RUNNER_OS=$RUNNER_OS RUNNER_ARCH=$RUNNER_ARCH ImageOS=$ImageOS ImageVersion=$ImageVersion"
+            uname -a; nproc; free -h; df -h / | tail -1
+            ls -l /dev/kvm 2>&1
+            if [ ! -e /dev/kvm ]; then
+              echo "KVM_GATE: ABSENT - emulator cannot use hardware acceleration on this runner"
+            else
+              echo "KVM_GATE: PRESENT"
+            fi
+            echo "===== 0b kvm permissions (standard GitHub emulator step) ====="
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules 2>&1
+            sudo udevadm control --reload-rules 2>&1
+            sudo udevadm trigger --name-match=kvm 2>&1
+            ls -l /dev/kvm 2>&1
+            touch /dev/kvm 2>/dev/null; echo "kvm_touch_rc=$? (0 = runner user can open the device)"
+          } > "$EVID/00-baseline.txt" 2>&1
+          cat "$EVID/00-baseline.txt"
+
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          SDKMANAGER="$(command -v sdkmanager)"
+          AVD="factoryphone"
+          SYSIMG="system-images;android-34;google_apis;x86_64"
+
+          {
+            echo "===== 1 sdkmanager installs (emulator + platform-tools + system image) ====="
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "sdkmanager=$SDKMANAGER"
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1; echo "licenses_rc=$?"
+            "$SDKMANAGER" "emulator" "platform-tools" "$SYSIMG" 2>&1 | tail -15
+            echo "install_rc=${PIPESTATUS[0]}"
+            ls "$ANDROID_HOME/emulator/emulator" 2>&1
+            ls "$ANDROID_HOME/system-images/android-34/google_apis/x86_64/" 2>&1 | head -8
+          } > "$EVID/01-install.txt" 2>&1
+          cat "$EVID/01-install.txt"
+
+          {
+            echo "===== 2 create AVD factoryphone (fixed PhoneVault profile) ====="
+            echo "no" | avdmanager create avd -n "$AVD" -k "$SYSIMG" -d pixel_6 --force 2>&1 | tail -5
+            echo "avdmanager_rc=${PIPESTATUS[1]}"
+            CFG="$HOME/.android/avd/$AVD.avd/config.ini"
+            echo "config_path=$CFG"
+            if [ -f "$CFG" ]; then
+              # assert the frozen profile values (DESIGN.md section 3)
+              sed -i '/^hw.ramSize=/d; /^hw.cpu.ncore=/d; /^disk.dataPartition.size=/d' "$CFG"
+              printf 'hw.ramSize=2048\nhw.cpu.ncore=2\ndisk.dataPartition.size=4096M\n' >> "$CFG"
+              grep -E '^(hw.ramSize|hw.cpu.ncore|disk.dataPartition.size|image.sysdir|hw.device.name)' "$CFG"
+            else
+              echo "CONFIG_MISSING - AVD creation failed"
+            fi
+          } > "$EVID/02-avd.txt" 2>&1
+          cat "$EVID/02-avd.txt"
+
+          EMU_PID=""
+          {
+            echo "===== 3 boot emulator headless (bounded wait 12 min) ====="
+            EMU_BIN="$ANDROID_HOME/emulator/emulator"
+            # v3 is boot No.1 on a fresh AVD: -wipe-data guarantees a clean,
+            # deterministic first start. RESTORE boots must NEVER pass it
+            # (DESIGN.md section 3 - it would factory-reset the phone).
+            nohup "$EMU_BIN" @"$AVD" -port 5554 -no-window -no-audio -no-boot-anim \
+              -gpu swiftshader_indirect -accel on -memory 2048 -cores 2 \
+              -no-snapshot -wipe-data > "$EVID/emulator-console.log" 2>&1 &
+            EMU_PID=$!
+            echo "emulator_pid=$EMU_PID"
+            adb wait-for-device 2>&1
+            BOOTED=""
+            for i in $(seq 1 36); do
+              BC="$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+              echo "poll $i: sys.boot_completed='$BC'"
+              if [ "$BC" = "1" ]; then BOOTED=1; break; fi
+              sleep 20
+            done
+            echo "BOOTED_FLAG=$BOOTED"
+            adb devices 2>&1
+            if [ "$BOOTED" = "1" ]; then echo "boot_wait_result: sys.boot_completed=1 reached"; else echo "boot_wait_result: TIMEOUT after 12 min"; fi
+          } > "$EVID/03-boot.txt" 2>&1
+          cat "$EVID/03-boot.txt"
+
+          {
+            echo "===== 4 capture identity + marker (only if booted) ====="
+            BOOTED="$(grep -c 'BOOTED_FLAG=1' "$EVID/03-boot.txt")"
+            if [ "$BOOTED" = "1" ]; then
+              echo "android_id: $(adb -s emulator-5554 shell settings get secure android_id 2>/dev/null | tr -d '\r')"
+              echo "model: $(adb -s emulator-5554 shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+              echo "device: $(adb -s emulator-5554 shell getprop ro.product.device 2>/dev/null | tr -d '\r')"
+              echo "android_release: $(adb -s emulator-5554 shell getprop ro.build.version.release 2>/dev/null | tr -d '\r')"
+              echo "android_sdk: $(adb -s emulator-5554 shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
+              TOKEN="pv1-$(date -u +%Y%m%d%H%M%S)-$(head -c4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+              echo "$TOKEN" > phonevault-marker-token.txt
+              adb -s emulator-5554 shell "echo $TOKEN > /sdcard/phonevault-marker-boot1.txt" 2>&1
+              echo "marker_token: $TOKEN"
+              echo "marker_readback: $(adb -s emulator-5554 shell cat /sdcard/phonevault-marker-boot1.txt 2>/dev/null | tr -d '\r')"
+              adb -s emulator-5554 exec-out screencap -p > phone-boot.png 2>/dev/null
+              ls -l phone-boot.png 2>&1
+              echo "CAPTURE_OK=1"
+            else
+              echo "CAPTURE_OK=0 - not booted, no identity to capture"
+              echo "--- emulator console log (tail 60) ---"
+              tail -60 "$EVID/emulator-console.log" 2>&1
+            fi
+          } > "$EVID/04-capture.txt" 2>&1
+          cat "$EVID/04-capture.txt"
+
+          {
+            echo "===== 5 shutdown ====="
+            adb -s emulator-5554 emu kill 2>&1; echo "emu_kill_rc=$?"
+            sleep 5
+            if [ -n "$EMU_PID" ] && kill -0 "$EMU_PID" 2>/dev/null; then
+              kill "$EMU_PID" 2>/dev/null; sleep 3
+              kill -9 "$EMU_PID" 2>/dev/null
+              echo "emulator process needed a hard kill"
+            else
+              echo "emulator process exited cleanly"
+            fi
+            df -h / | tail -1
+            du -sh "$HOME/.android/avd/$AVD.avd" 2>/dev/null
+            ls -lh "$HOME/.android/avd/$AVD.avd/" 2>/dev/null | head -20
+          } > "$EVID/05-shutdown.txt" 2>&1
+          cat "$EVID/05-shutdown.txt"
+
+          # stash evidence where the (always) output step can find it
+          cp -r "$EVID" .pv-evidence-final 2>/dev/null
+          if [ -f phone-boot.png ]; then cp phone-boot.png .pv-screencap.png; fi
+          if [ -f phonevault-marker-token.txt ]; then cp phonevault-marker-token.txt .pv-marker-token.txt; fi
+          echo "evidence stashed"
+
+      - name: Upload boot screencap (artifact only, never committed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-screenshot
+          path: .pv-screencap.png
+          if-no-files-found: ignore
+
+      - name: Write verdict + commit output back
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          OUT=emulator-output.txt
+          EVID=.pv-evidence-final
+          BOOTED=0; CAPOK=0
+          [ -f "$EVID/03-boot.txt" ] && BOOTED="$(grep -c 'BOOTED_FLAG=1' "$EVID/03-boot.txt")"
+          [ -f "$EVID/04-capture.txt" ] && CAPOK="$(grep -c 'CAPTURE_OK=1' "$EVID/04-capture.txt")"
+          {
+            if [ "$BOOTED" = "1" ] && [ "$CAPOK" = "1" ]; then
+              echo "EMULATOR BOOT: BOOTED - sys.boot_completed=1 reached on factoryphone (android-34 google_apis x86_64, KVM accel, headless); identity + screencap captured; NO vault state was restored in this run (by design)"
+            elif [ "$BOOTED" = "1" ]; then
+              echo "EMULATOR BOOT: NO BOOT - emulator reported boot_completed but identity capture failed (see section 4)"
+            else
+              KVM="$(grep -h 'KVM_GATE:' "$EVID/00-baseline.txt" 2>/dev/null)"
+              CFG="$(grep -h 'CONFIG_MISSING' "$EVID/02-avd.txt" 2>/dev/null)"
+              if echo "$KVM" | grep -q ABSENT; then
+                echo "EMULATOR BOOT: NO BOOT - /dev/kvm absent on this runner (see section 0)"
+              elif [ -n "$CFG" ]; then
+                echo "EMULATOR BOOT: NO BOOT - AVD creation failed, no config.ini (see sections 1-2)"
+              else
+                echo "EMULATOR BOOT: NO BOOT - sys.boot_completed never reached 1 within the 12-minute bounded wait (see sections 3-4 + emulator console log tail)"
+              fi
+            fi
+            echo ""
+            for f in "$EVID"/0*.txt; do
+              [ -f "$f" ] || continue
+              echo "########## $f ##########"
+              cat "$f"
+              echo ""
+            done
+          } > "$OUT" 2>&1
+          cat "$OUT"
+          git config user.name "cloud-android-probe"
+          git config user.email "probe@localhost"
+          git add emulator-output.txt
+          git commit -m "emulator output [skip ci]" || exit 0
+          git push
