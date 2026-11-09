@@ -1,0 +1,259 @@
+name: avdmanager-diagnosis
+
+# PhoneVault - avdmanager silent-failure diagnosis (standalone, manual only).
+# Run #2 (workflow v3.1) evidence: avdmanager create returned rc=0 on BOTH
+# attempts (-d pixel_6, then default device) yet wrote no config.ini at the
+# checked path $HOME/.android/avd/factoryphone.avd/config.ini.
+# This job runs ONE discriminating experiment: replicate v3.1 attempt 1
+# EXACTLY, then SEARCH the whole runner for wherever the AVD actually went,
+# ask avdmanager itself where its AVDs live, and retry with
+# ANDROID_AVD_HOME set explicitly. Hypotheses discriminated:
+#   H1 AVD created under a different AVD home than the path checked
+#   H2 silent write failure (permissions / space / read-only ~/.android)
+#   H3 stdin answer-file handling cut the create flow mid-prompt
+#   H4 cmdline-tools quirk: create exits 0 without writing when the target
+#      image's package-path resolution fails
+# It does NOT boot anything and does NOT touch emulator.yml (v3.1/v3.2).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phonevault-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  diagnosis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Diagnosis (env, replicate create, search, explicit-home retry)
+        shell: bash
+        run: |
+          set +e
+          EVID=.diag-evidence
+          mkdir -p "$EVID"
+          AVD="factoryphone"
+          SYSIMG="system-images;android-34;google_apis;x86_64"
+          : > "$EVID/state.env"
+
+          {
+            echo "===== 0 environment (AVD-home resolution inputs) ====="
+            echo "date_utc: $(date -u +%FT%TZ)"
+            echo "HOME=$HOME"
+            echo "ANDROID_HOME=${ANDROID_HOME-<unset>}"
+            echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT-<unset>}"
+            echo "ANDROID_AVD_HOME=${ANDROID_AVD_HOME-<unset>}"
+            echo "ANDROID_USER_HOME=${ANDROID_USER_HOME-<unset>}"
+            echo "ANDROID_SDK_HOME=${ANDROID_SDK_HOME-<unset>}"
+            echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+            echo "-- full ANDROID_* / JAVA_* environment --"
+            env | grep -iE '^(ANDROID|JAVA)' | sort
+            echo "-- identity / disk --"
+            id
+            df -h / | tail -1
+            echo "-- java version --"
+            java -version 2>&1
+            echo "-- tool versions --"
+            export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+            export ANDROID_SDK_ROOT="$ANDROID_HOME"
+            export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+            echo "sdkmanager_path=$(command -v sdkmanager)"
+            echo "avdmanager_path=$(command -v avdmanager)"
+            sdkmanager --version 2>&1
+            echo "-- cmdline-tools source.properties (Pkg.Revision = cmdline-tools version) --"
+            cat "$ANDROID_HOME/cmdline-tools/latest/source.properties" 2>&1
+            echo "-- HOME and ~/.android BEFORE any create --"
+            ls -la "$HOME" 2>&1 | head -30
+            ls -la "$HOME/.android" 2>&1
+            ls -la "$HOME/.android/avd" 2>&1
+            echo "-- writability probe of the checked AVD home (H2 discriminator) --"
+            mkdir -p "$HOME/.android/avd" 2>&1; echo "mkdir_rc=$?"
+            touch "$HOME/.android/avd/.diag-write-test" 2>&1; echo "touch_rc=$?"
+            ls -la "$HOME/.android/avd" 2>&1
+            rm -f "$HOME/.android/avd/.diag-write-test"
+          } > "$EVID/00-env.txt" 2>&1
+          cat "$EVID/00-env.txt"
+
+          {
+            echo "===== 1 sdkmanager install (system image ONLY, same package as v3.1) ====="
+            SDKMANAGER="$(command -v sdkmanager)"
+            echo "sdkmanager=$SDKMANAGER"
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1; echo "licenses_rc=$? (broken-pipe rc here is cosmetic; install_rc below is the real signal)"
+            "$SDKMANAGER" "$SYSIMG" 2>&1 | tail -4
+            echo "install_rc=${PIPESTATUS[0]}"
+            echo "-- installed system-image dir --"
+            ls "$ANDROID_HOME/system-images/android-34/google_apis/x86_64/" 2>&1 | head -8
+            "$SDKMANAGER" --list_installed 2>/dev/null | grep -i 'system-images'
+          } > "$EVID/01-install.txt" 2>&1
+          cat "$EVID/01-install.txt"
+
+          {
+            echo "===== 2 create AVD - EXACT replica of v3.1 attempt 1 (-d pixel_6) ====="
+            printf 'no\n' > "$EVID/avd-answer.txt"
+            : > "$EVID/02b-create-full.txt"
+            echo "--- create attempt 1 (diagnosis): -d pixel_6, stdin from answer file, no pipeline ---" >> "$EVID/02b-create-full.txt"
+            avdmanager create avd -n "$AVD" -k "$SYSIMG" -d pixel_6 --force < "$EVID/avd-answer.txt" >> "$EVID/02b-create-full.txt" 2>&1
+            CREATE_RC=$?
+            echo "create_rc=$CREATE_RC"
+            CFG="$HOME/.android/avd/$AVD.avd/config.ini"
+            echo "checked_config_path=$CFG"
+            if [ -f "$CFG" ]; then
+              echo "CHECKED_CFG_EXISTS=1"
+              echo "CHECKED_CFG_EXISTS=1" >> "$EVID/state.env"
+            else
+              echo "CHECKED_CFG_EXISTS=0 - config.ini NOT at the path v3.1 checked"
+              echo "CHECKED_CFG_EXISTS=0" >> "$EVID/state.env"
+            fi
+            echo "create_rc=$CREATE_RC" >> "$EVID/state.env"
+            echo "-- ~/.android tree immediately after create --"
+            ls -laR "$HOME/.android" 2>&1 | head -60
+            echo "full avdmanager output (uncut): section 02b (02b-create-full.txt)"
+          } > "$EVID/02-create.txt" 2>&1
+          cat "$EVID/02-create.txt"
+          echo "########## 02b avdmanager create output (full) ##########"
+          cat "$EVID/02b-create-full.txt"
+
+          {
+            echo "===== 3 search - where did the AVD actually go? ====="
+            echo "-- find, verbatim as specified --"
+            find /home/runner /usr/local/lib/android -name "factoryphone*" -o -name "config.ini" -path "*avd*" 2>/dev/null | tee "$EVID/find-verbatim.txt"
+            echo "-- find, parenthesised equivalent (same intent, unambiguous grouping) --"
+            find /home/runner /usr/local/lib/android \( -name "factoryphone*" -o \( -name "config.ini" -path "*avd*" \) \) 2>/dev/null | tee "$EVID/find-paren.txt"
+            echo "-- supplemental roots (workspace, /tmp, /root) --"
+            find "$GITHUB_WORKSPACE" /tmp -name "factoryphone*" 2>/dev/null
+            sudo find /root -name "factoryphone*" 2>/dev/null
+            echo "-- any *.avd directories under the searched roots --"
+            find /home/runner /usr/local/lib/android -type d -name "*.avd" 2>/dev/null
+            echo "-- first config.ini found (if any) --"
+            FOUND_CFG="$(grep -m1 'config\.ini$' "$EVID/find-paren.txt" 2>/dev/null)"
+            if [ -z "$FOUND_CFG" ]; then FOUND_CFG="$(grep -m1 'config\.ini$' "$EVID/find-verbatim.txt" 2>/dev/null)"; fi
+            echo "found_config_ini=${FOUND_CFG:-<none>}"
+            echo "FOUND_CFG=${FOUND_CFG}" >> "$EVID/state.env"
+            echo "-- ls -laR of every candidate AVD dir --"
+            CANDIDATES="$HOME/.android/avd"
+            if [ -n "${ANDROID_AVD_HOME:-}" ]; then CANDIDATES="$CANDIDATES $ANDROID_AVD_HOME"; fi
+            for c in $(grep 'config\.ini$' "$EVID/find-paren.txt" "$EVID/find-verbatim.txt" 2>/dev/null | sed 's|/config\.ini$||' | sort -u); do
+              CANDIDATES="$CANDIDATES $c $(dirname "$c")"
+            done
+            for d in $CANDIDATES; do
+              echo "---- ls -laR $d ----"
+              ls -laR "$d" 2>&1 | head -120
+            done
+            echo "-- avdmanager list avd (avdmanager's OWN view of where its AVDs live) --"
+            avdmanager list avd 2>&1
+            avdmanager list avd 2>/dev/null | grep -E '^(Name|Path):' > "$EVID/list-avd-paths.txt" 2>&1
+            cat "$EVID/list-avd-paths.txt"
+          } > "$EVID/03-search.txt" 2>&1
+          cat "$EVID/03-search.txt"
+
+          {
+            echo "===== 4 retry create with ANDROID_AVD_HOME set explicitly ====="
+            export ANDROID_AVD_HOME="$HOME/.android/avd"
+            echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME"
+            echo "--- create attempt 2 (diagnosis): identical to attempt 1 except ANDROID_AVD_HOME is set ---" >> "$EVID/02b-create-full.txt"
+            avdmanager create avd -n "$AVD" -k "$SYSIMG" -d pixel_6 --force < "$EVID/avd-answer.txt" >> "$EVID/02b-create-full.txt" 2>&1
+            RETRY_RC=$?
+            echo "retry_rc=$RETRY_RC"
+            echo "retry_rc=$RETRY_RC" >> "$EVID/state.env"
+            EXPLICIT_CFG="$ANDROID_AVD_HOME/$AVD.avd/config.ini"
+            CHECKED_CFG="$HOME/.android/avd/$AVD.avd/config.ini"
+            echo "-- check BOTH paths --"
+            if [ -f "$EXPLICIT_CFG" ]; then echo "explicit_home_config: EXISTS at $EXPLICIT_CFG"; RETRY_OK=1; else echo "explicit_home_config: MISSING at $EXPLICIT_CFG"; RETRY_OK=0; fi
+            if [ -f "$CHECKED_CFG" ]; then echo "originally_checked_config: EXISTS at $CHECKED_CFG"; else echo "originally_checked_config: MISSING at $CHECKED_CFG"; fi
+            echo "RETRY_OK=$RETRY_OK" >> "$EVID/state.env"
+            echo "-- avdmanager list avd WITH ANDROID_AVD_HOME set --"
+            avdmanager list avd 2>&1
+            echo "-- search again after retry --"
+            find /home/runner /usr/local/lib/android \( -name "factoryphone*" -o \( -name "config.ini" -path "*avd*" \) \) 2>/dev/null
+          } > "$EVID/04-explicit-home.txt" 2>&1
+          cat "$EVID/04-explicit-home.txt"
+
+          # ----- verdict + hypothesis assessment (section 5) -----
+          . "$EVID/state.env"
+          CHECKED_PATH="$HOME/.android/avd/$AVD.avd/config.ini"
+          {
+            echo "===== 5 hypothesis assessment (from the evidence above) ====="
+            echo "checked_path=$CHECKED_PATH"
+            echo "found_config_ini=${FOUND_CFG:-<none>}"
+            echo "create_rc=${CREATE_RC:-?} retry_rc=${RETRY_RC:-?} retry_ok=${RETRY_OK:-0}"
+            echo ""
+            echo "-- H1: AVD was created under a DIFFERENT AVD home than the path checked --"
+            if [ -n "${FOUND_CFG:-}" ] && [ "$FOUND_CFG" != "$CHECKED_PATH" ]; then
+              echo "H1: CONFIRMED - config.ini exists at $FOUND_CFG, not at the checked path. The create in run #2 succeeded; v3.1 simply looked in the wrong place."
+            elif grep -q "Path: " "$EVID/list-avd-paths.txt" 2>/dev/null && ! grep -q "Path: $HOME/.android/avd" "$EVID/list-avd-paths.txt" 2>/dev/null; then
+              echo "H1: CONFIRMED - avdmanager list avd (section 3) reports the AVD under a Path outside $HOME/.android/avd."
+            elif [ "${RETRY_OK:-0}" = "1" ] && [ "${CHECKED_CFG_EXISTS:-0}" = "0" ]; then
+              echo "H1: CONFIRMED in env form - the env-less create produced nothing findable at the checked path, while the IDENTICAL create with ANDROID_AVD_HOME set explicitly landed config.ini at $CHECKED_PATH. AVD-home resolution differs with the env var; the fix is to always set ANDROID_AVD_HOME (and check where list avd points) in the boot workflow."
+            else
+              echo "H1: NOT CONFIRMED by this run - no config.ini found at any other home, and list avd showed no off-path AVD."
+            fi
+            echo ""
+            echo "-- H2: silent write failure (permissions / space / read-only ~/.android) --"
+            TOUCH_RC="$(grep -m1 '^touch_rc=' "$EVID/00-env.txt" 2>/dev/null | cut -d= -f2)"
+            echo "writability probe touch_rc=${TOUCH_RC:-unknown} (section 0); disk line in section 0."
+            if [ "${TOUCH_RC:-1}" != "0" ]; then
+              echo "H2: CONFIRMED - the checked AVD home is not writable by the runner user."
+            elif [ "${RETRY_OK:-0}" = "1" ] || [ -n "${FOUND_CFG:-}" ]; then
+              echo "H2: KILLED - the home is writable (touch_rc=0) and an AVD write did land on this runner."
+            else
+              echo "H2: WEAKENED - the home is writable (touch_rc=0) and space was available, yet no write landed; a plain permissions/space failure does not explain a silent rc=0 no-write."
+            fi
+            echo ""
+            echo "-- H3: stdin answer-file handling cut the create flow mid-prompt --"
+            if [ "${RETRY_OK:-0}" = "1" ]; then
+              echo "H3: KILLED as the cause - attempt 2 used the IDENTICAL answer file and stdin handling; only ANDROID_AVD_HOME changed, and the create completed. Same stdin, different outcome => stdin was not the discriminator."
+            elif grep -q 'custom hardware profile' "$EVID/02b-create-full.txt" 2>/dev/null; then
+              echo "H3: STILL LIVE - at least one create printed the 'custom hardware profile? [no]' prompt; compare section 02b: if output ENDS at that prompt with nothing after, the single-line answer file may have been consumed earlier than the prompt. (In run #2 attempt 1 the output ended BEFORE the prompt, at 'Auto-selecting single ABI x86_64'.)"
+            else
+              echo "H3: NOT SUPPORTED - no create output shows the prompt, and no attempt completed; the flow stops before the prompt stage."
+            fi
+            echo ""
+            echo "-- H4: cmdline-tools quirk - create exits 0 without writing when image package-path resolution fails --"
+            if [ -z "${FOUND_CFG:-}" ] && [ "${RETRY_OK:-0}" != "1" ]; then
+              echo "H4: SURVIVING hypothesis - every create returned rc=0, the system image is verifiably installed (section 1), the target home is writable, and yet NO AVD exists anywhere avdmanager or find can see. That is exactly a silent no-write inside avdmanager's package/AVD resolution (cmdline-tools revision recorded in section 0). Next lever if this stands: pin/upgrade cmdline-tools, or create with an explicit -p <path> (avdmanager create avd --path), which bypasses home resolution entirely."
+            else
+              echo "H4: KILLED - an AVD was in fact created and located on this runner with the same cmdline-tools and the same image package."
+            fi
+          } > "$EVID/05-hypotheses.txt" 2>&1
+          cat "$EVID/05-hypotheses.txt"
+
+          {
+            if [ -n "${FOUND_CFG:-}" ]; then
+              echo "DIAGNOSIS: AVD FOUND AT $FOUND_CFG"
+            elif [ "${RETRY_OK:-0}" = "1" ]; then
+              echo "DIAGNOSIS: AVD FOUND AT $CHECKED_PATH (only when ANDROID_AVD_HOME is set explicitly)"
+            else
+              echo "DIAGNOSIS: AVD NOWHERE - avdmanager_rc=0 on every create (v3.1 replica + explicit-home retry), system image installed and verified, checked AVD home writable, and find across /home/runner + the SDK tree + workspace + /tmp + /root plus avdmanager list avd locate no factoryphone AVD anywhere"
+            fi
+          } > "$EVID/verdict.txt"
+          cat "$EVID/verdict.txt"
+
+      - name: Assemble diagnosis output + commit back
+        shell: bash
+        run: |
+          set +e
+          OUT=avdmanager-diagnosis-output.txt
+          EVID=.diag-evidence
+          {
+            cat "$EVID/verdict.txt"
+            echo ""
+            for f in "$EVID"/0*.txt; do
+              [ -f "$f" ] || continue
+              echo "########## $f ##########"
+              cat "$f"
+              echo ""
+            done
+          } > "$OUT" 2>&1
+          cat "$OUT"
+          git config user.name "cloud-android-probe"
+          git config user.email "probe@localhost"
+          git add avdmanager-diagnosis-output.txt
+          git commit -m "avdmanager diagnosis output [skip ci]" || exit 0
+          git push
