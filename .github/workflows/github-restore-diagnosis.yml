@@ -1,0 +1,414 @@
+name: phonevault-restore-diagnosis
+
+# DIAGNOSIS ONLY - not a production workflow. One question: WHY did restore
+# run No.9 (v3.4.2) boot a FRESH phone from run No.6's verified pack?
+# Dispatch-only (no push trigger): uploading this file never auto-runs it.
+# It fetches the pack PINNED to run 42591097329 and accepts a pack only when
+# its phonevault-version.txt matches the run No.6 birth certificate - run
+# No.9 uploaded a session=2 pack of the WRONG phone under the same artifact
+# name, so a naive newest-first fetch would now restore that phone.
+# It never packs and never uploads a phonevault-avd-state artifact.
+# Full design + hypothesis map: DIAGNOSIS2-NOTES.md (phonevault/).
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: phonevault-restore-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  restore-diagnosis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Diag step 1 of 5 - baseline, KVM gate, SDK install, versions
+        shell: bash
+        run: |
+          set +e
+          EVID=.pv-diag
+          mkdir -p "$EVID"
+          {
+            echo "PHONEVAULT RESTORE DIAGNOSIS (for run No.9 IDENTITY LOST)"
+            echo "question: why did the emulator boot a fresh userdata from run No.6's verified pack?"
+            echo "run_started_utc: $(date -u +%FT%TZ)"
+            echo "workflow_run_id: ${{ github.run_id }}"
+            echo "===== 0 runner / kvm gate ====="
+            echo "RUNNER_OS=$RUNNER_OS ImageOS=$ImageOS ImageVersion=$ImageVersion"
+            uname -a; nproc; free -h; df -h / | tail -1
+            ls -l /dev/kvm 2>&1
+            if [ -e /dev/kvm ]; then echo "KVM_GATE: PRESENT"; else echo "KVM_GATE: ABSENT"; fi
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules 2>&1
+            sudo udevadm control --reload-rules 2>&1; sudo udevadm trigger --name-match=kvm 2>&1
+          } > "$EVID/00-baseline.txt" 2>&1
+          cat "$EVID/00-baseline.txt"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_AVD_HOME="$HOME/.android/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          SDKMANAGER="$(command -v sdkmanager)"
+          SYSIMG="system-images;android-34;google_apis;x86_64"
+          {
+            echo "===== 1 sdkmanager installs + VERSION CAPTURE (H4 evidence) ====="
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1; echo "licenses_rc=$?"
+            "$SDKMANAGER" "emulator" "platform-tools" "$SYSIMG" 2>&1 | tail -4
+            echo "install_rc=${PIPESTATUS[0]}"
+            echo "-- emulator -version (stdout+stderr; run No.6's pack recorded this EMPTY) --"
+            "$ANDROID_HOME/emulator/emulator" -version 2>&1 | head -3
+            echo "-- emulator package source.properties --"
+            grep -E 'Pkg\.(Revision|Desc)' "$ANDROID_HOME/emulator/source.properties" 2>&1
+            echo "-- sdkmanager --list_installed (emulator + system-images lines) --"
+            "$SDKMANAGER" --list_installed 2>&1 | grep -iE 'emulator|system-images'
+            echo "-- system image source.properties revision --"
+            grep -E 'Pkg\.(Revision|Desc|Path)' "$ANDROID_HOME/system-images/android-34/google_apis/x86_64/source.properties" 2>&1
+            echo "-- qemu-img present? --"
+            ls -l "$ANDROID_HOME/emulator/qemu-img" 2>&1; command -v qemu-img 2>&1
+          } > "$EVID/01-install.txt" 2>&1
+          cat "$EVID/01-install.txt"
+          {
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME"
+            echo "SYSIMG=$SYSIMG"
+          } >> "$GITHUB_ENV"
+
+      - name: Diag step 2 of 5 - fetch run No.6 pack (pinned + verified), integrity, qemu-img
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          EVID=.pv-diag
+          mkdir -p "$EVID"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          EXP_ID="eb1f3b68022698ab"
+          EXP_MARKER="pv1-20261109091316-6d8ff478"
+          EXP_SHA="6074bc7f3f5e7573fcba050bdc3b61fc3c9fa693f6cb29eb890d78fea34917b"
+          SOURCE_RUN="42591097329"
+          QIMG="$ANDROID_HOME/emulator/qemu-img"; [ -x "$QIMG" ] || QIMG="$(command -v qemu-img)"
+          DLDIR=pv-diag-dl; STAGE=pv-state
+          FETCH_OK=0
+          {
+            echo "===== 2 fetch pack PINNED to run $SOURCE_RUN + birth-certificate verification ====="
+            echo "expected_android_id=$EXP_ID expected_marker=$EXP_MARKER"
+            echo "expected_userdata_qcow2_sha256=$EXP_SHA"
+            try_run() {
+              rm -rf "$DLDIR"; mkdir -p "$DLDIR"
+              echo "-- trying artifact phonevault-avd-state from run $1 --"
+              if gh run download "$1" --name phonevault-avd-state --dir "$DLDIR" 2>&1 && [ -f "$DLDIR/phonevault-state.tar" ]; then
+                V="$(tar -xOf "$DLDIR/phonevault-state.tar" phonevault-version.txt 2>/dev/null)"
+                AID_IN="$(printf '%s' "$V" | sed -n 's/^android_id=//p' | tr -d '\r' | head -1)"
+                echo "run $1 pack android_id=$AID_IN"
+                if [ "$AID_IN" = "$EXP_ID" ]; then
+                  printf '%s\n' "$V" > "$EVID/birth-certificate.txt"
+                  FOUND_RUN="$1"; return 0
+                fi
+                echo "run $1 pack REJECTED - not the run No.6 phone (session/identity differs)"
+                return 1
+              fi
+              echo "run $1: no usable phonevault-avd-state artifact"
+              return 1
+            }
+            FOUND_RUN=""
+            try_run "$SOURCE_RUN" || true
+            if [ -z "$FOUND_RUN" ]; then
+              echo "-- pinned run failed; scanning other successful emulator runs WITH the same verification --"
+              for RID in $(gh run list --workflow emulator.yml --status success --limit 25 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
+                case "$RID" in ''|*[!0-9]*) continue;; esac
+                [ "$RID" = "${{ github.run_id }}" ] && continue
+                try_run "$RID" && break || true
+              done
+            fi
+            if [ -z "$FOUND_RUN" ]; then
+              echo "FETCH_FAILED=1 - no artifact anywhere carries the run No.6 birth certificate; diagnosis cannot proceed"
+            else
+              FETCH_OK=1
+              echo "state_source_run=$FOUND_RUN (birth certificate verified)"
+              echo "-- birth certificate (from the pack) --"
+              cat "$EVID/birth-certificate.txt"
+              ls -lh "$DLDIR/phonevault-state.tar"
+              rm -rf "$STAGE"; mkdir -p "$STAGE"
+              tar -xf "$DLDIR/phonevault-state.tar" -C "$STAGE" 2>&1; echo "stage_untar_rc=$?"
+              echo "-- staged pack contents (stat: name bytes mtime) --"
+              for f in "$STAGE"/*; do stat -c '%n %s %y' "$f"; done
+              echo "===== 2b H1 INTEGRITY: sha256 of the untarred userdata-qemu.img.qcow2 ====="
+              SHA="$(sha256sum "$STAGE/userdata-qemu.img.qcow2" | awk '{print $1}')"
+              SZ="$(stat -c %s "$STAGE/userdata-qemu.img.qcow2")"
+              echo "staged_userdata_qcow2_sha256=$SHA"
+              echo "staged_userdata_qcow2_size=$SZ (certificate says 792854528)"
+              if [ "$SHA" = "$EXP_SHA" ]; then
+                echo "H1_FILE_INTEGRITY: INTACT - the file on disk is bit-identical to what run No.6 packed; the loss happened at/after emulator start, not in transport"
+                echo "INTACT" > "$EVID/h1.txt"
+              else
+                echo "H1_FILE_INTEGRITY: DIFFERS - transport/untar corrupted or altered the file; H1 CONFIRMED as at least a contributor"
+                echo "DIFFERS" > "$EVID/h1.txt"
+              fi
+              echo "===== 2c qemu-img info on the PRISTINE staged files (before any boot) ====="
+              echo "-- userdata-qemu.img.qcow2 --"
+              "$QIMG" info "$STAGE/userdata-qemu.img.qcow2" 2>&1
+              echo "-- userdata-qemu.img (its backing/base) --"
+              "$QIMG" info "$STAGE/userdata-qemu.img" 2>&1
+              echo "-- encryptionkey.img.qcow2 --"
+              "$QIMG" info "$STAGE/encryptionkey.img.qcow2" 2>&1
+            fi
+          } > "$EVID/02-fetch.txt" 2>&1
+          cat "$EVID/02-fetch.txt"
+          {
+            echo "FETCH_OK=$FETCH_OK"
+            echo "EXP_ID=$EXP_ID"
+            echo "EXP_MARKER=$EXP_MARKER"
+            echo "EXP_SHA=$EXP_SHA"
+          } >> "$GITHUB_ENV"
+
+      - name: Diag step 3 of 5 - ATTEMPT A (faithful run No.9 replica) verbose boot + capture
+        shell: bash
+        run: |
+          set +e
+          EVID=.pv-diag
+          mkdir -p "$EVID"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+          AVD=factoryphone
+          AVDDIR="$ANDROID_AVD_HOME/$AVD.avd"
+          STAGE=pv-state
+          {
+            echo "===== 3 ATTEMPT A - replicate run No.9 exactly: avdmanager create, THEN untar over it ====="
+            if [ "$FETCH_OK" != "1" ]; then echo "ATTEMPT_A_SKIPPED=1 - pack fetch failed (section 2)"; fi
+          } > "$EVID/03-attempt-a.txt" 2>&1
+          if [ "$FETCH_OK" = "1" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+            printf 'no\n' > "$EVID/avd-answer.txt"
+            avdmanager create avd -n "$AVD" -k "$SYSIMG" -d pixel_6 --force < "$EVID/avd-answer.txt" > "$EVID/03a-avdmanager.txt" 2>&1
+            echo "avdmanager_rc=$?" >> "$EVID/03-attempt-a.txt"
+            CFG="$AVDDIR/config.ini"
+            sed -i '/^hw.ramSize=/d; /^hw.cpu.ncore=/d; /^disk.dataPartition.size=/d' "$CFG"
+            printf 'hw.ramSize=2048\nhw.cpu.ncore=2\ndisk.dataPartition.size=4096M\n' >> "$CFG"
+            {
+              echo "-- AVD folder AFTER avdmanager create, BEFORE untar (the fresh scaffolding) --"
+              for f in "$AVDDIR"/*; do stat -c '%n %s %y' "$f" 2>/dev/null; done
+              echo "-- is the stray userdata.img the system image's fresh template? --"
+              sha256sum "$AVDDIR/userdata.img" "$ANDROID_HOME/system-images/android-34/google_apis/x86_64/userdata.img" 2>&1
+              echo "-- untar the verified pack OVER the fresh AVD (run No.9's order) --"
+              tar -xf pv-diag-dl/phonevault-state.tar -C "$AVDDIR" 2>&1; echo "untar_rc=$?"
+              echo "-- AVD folder AFTER untar, BEFORE boot --"
+              for f in "$AVDDIR"/*; do stat -c '%n %s %y' "$f" 2>/dev/null; done
+              SHA_A="$(sha256sum "$AVDDIR/userdata-qemu.img.qcow2" | awk '{print $1}')"
+              echo "inplace_userdata_qcow2_sha256=$SHA_A (expected $EXP_SHA)"
+              echo "-- restored config.ini identity lines --"
+              grep -E '^(hw.device.name|image.sysdir|hw.ramSize|disk.dataPartition)' "$CFG" 2>&1
+              echo "===== 3b ATTEMPT A boot (verbose emulator log captured) ====="
+            } >> "$EVID/03-attempt-a.txt" 2>&1
+            EMU_BIN="$ANDROID_HOME/emulator/emulator"
+            nohup "$EMU_BIN" @"$AVD" -port 5554 -no-window -no-audio -no-boot-anim \
+              -gpu swiftshader_indirect -accel on -memory 2048 -cores 2 \
+              -no-snapshot -verbose > "$EVID/emulator-a.log" 2>&1 &
+            EMU_PID=$!
+            echo "emulator_a_pid=$EMU_PID" >> "$EVID/03-attempt-a.txt"
+            timeout 90 adb -s emulator-5554 wait-for-device 2>&1; echo "wait_for_device_rc=$?" >> "$EVID/03-attempt-a.txt"
+            BOOTED=""
+            for i in $(seq 1 24); do
+              BC="$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+              echo "poll $i: sys.boot_completed='$BC'" >> "$EVID/03-attempt-a.txt"
+              if [ "$BC" = "1" ]; then BOOTED=1; break; fi
+              sleep 20
+            done
+            {
+              echo "attempt_a_booted=$BOOTED"
+              if [ "$BOOTED" = "1" ]; then
+                A_ID="$(adb -s emulator-5554 shell settings get secure android_id 2>/dev/null | tr -d '\r')"
+                A_MARKER="$(adb -s emulator-5554 shell cat /sdcard/phonevault-marker-boot1.txt 2>/dev/null | tr -d '\r')"
+                echo "attempt_a_android_id=$A_ID"
+                echo "attempt_a_model=$(adb -s emulator-5554 shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+                echo "attempt_a_device=$(adb -s emulator-5554 shell getprop ro.product.device 2>/dev/null | tr -d '\r')"
+                echo "attempt_a_marker_readback=$A_MARKER"
+                if [ "$A_ID" = "$EXP_ID" ] && [ "$A_MARKER" = "$EXP_MARKER" ]; then
+                  echo "ATTEMPT_A_IDENTITY: SAME PHONE"
+                  echo "SAME" > "$EVID/identity-a.txt"
+                else
+                  echo "ATTEMPT_A_IDENTITY: LOST (expected id $EXP_ID marker $EXP_MARKER)"
+                  echo "LOST" > "$EVID/identity-a.txt"
+                fi
+              else
+                echo "ATTEMPT_A_IDENTITY: NOT EVALUATED - no boot within 8 min"
+                echo "NOBOOT" > "$EVID/identity-a.txt"
+              fi
+            } >> "$EVID/03-attempt-a.txt" 2>&1
+            adb -s emulator-5554 emu kill > /dev/null 2>&1; sleep 5
+            if kill -0 "$EMU_PID" 2>/dev/null; then kill "$EMU_PID" 2>/dev/null; sleep 3; kill -9 "$EMU_PID" 2>/dev/null; fi
+            {
+              echo "-- AVD folder AFTER attempt A boot + shutdown (compare with pre-boot stats above: did the emulator REWRITE the restored files?) --"
+              for f in "$AVDDIR"/*; do stat -c '%n %s %y' "$f" 2>/dev/null; done
+              SHA_A2="$(sha256sum "$AVDDIR/userdata-qemu.img.qcow2" 2>/dev/null | awk '{print $1}')"
+              echo "postboot_userdata_qcow2_sha256=$SHA_A2"
+              if [ "$SHA_A2" = "$EXP_SHA" ]; then echo "postboot_qcow2: UNCHANGED by the boot"; else echo "postboot_qcow2: CHANGED by the boot (emulator wrote into / replaced the restored overlay)"; fi
+              echo "===== 3c H2 EVIDENCE - the emulator's own userdata/encryption lines (attempt A log) ====="
+              grep -inE 'userdata|qcow2|encrypt|backing|snapshot|wipe' "$EVID/emulator-a.log" 2>/dev/null | head -80
+              echo "-- emulator errors/warnings (attempt A log) --"
+              grep -inE 'error|failed|warning|invalid|incompatible' "$EVID/emulator-a.log" 2>/dev/null | head -40
+            } >> "$EVID/03-attempt-a.txt" 2>&1
+          fi
+          cat "$EVID/03-attempt-a.txt"
+
+      - name: Diag step 4 of 5 - ATTEMPT B (clean room - hand-made empty AVD folder, no avdmanager)
+        shell: bash
+        run: |
+          set +e
+          EVID=.pv-diag
+          mkdir -p "$EVID"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          export ANDROID_AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+          AVD=factoryphone
+          AVDDIR="$ANDROID_AVD_HOME/$AVD.avd"
+          {
+            echo "===== 4 ATTEMPT B - clean room: NO avdmanager pre-create; folder made by hand; pack untars into an EMPTY folder ====="
+            if [ "$FETCH_OK" != "1" ]; then echo "ATTEMPT_B_SKIPPED=1 - pack fetch failed (section 2)"; fi
+          } > "$EVID/04-attempt-b.txt" 2>&1
+          if [ "$FETCH_OK" = "1" ]; then
+            pkill -f 'emulator' 2>/dev/null; sleep 3; adb kill-server 2>/dev/null; sleep 2
+            rm -rf "$AVDDIR" "$ANDROID_AVD_HOME/$AVD.ini"
+            mkdir -p "$AVDDIR"
+            {
+              printf 'avd.ini.encoding=UTF-8\n'
+              printf 'path=%s\n' "$AVDDIR"
+              printf 'path.rel=avd/%s.avd\n' "$AVD"
+              printf 'target=android-34\n'
+            } > "$ANDROID_AVD_HOME/$AVD.ini"
+            {
+              echo "-- hand-made factoryphone.ini --"
+              cat "$ANDROID_AVD_HOME/$AVD.ini"
+              echo "-- untar the verified pack into the EMPTY folder --"
+              tar -xf pv-diag-dl/phonevault-state.tar -C "$AVDDIR" 2>&1; echo "untar_rc=$?"
+              echo "-- AVD folder AFTER untar, BEFORE boot (pack files ONLY - the H3 control) --"
+              for f in "$AVDDIR"/*; do stat -c '%n %s %y' "$f" 2>/dev/null; done
+              if [ -f "$AVDDIR/userdata.img" ]; then echo "stray_userdata_img: PRESENT (unexpected - pack does not contain one)"; else echo "stray_userdata_img: ABSENT (as designed for attempt B)"; fi
+              SHA_B="$(sha256sum "$AVDDIR/userdata-qemu.img.qcow2" | awk '{print $1}')"
+              echo "inplace_userdata_qcow2_sha256=$SHA_B (expected $EXP_SHA)"
+              echo "===== 4b ATTEMPT B boot (verbose emulator log captured) ====="
+            } >> "$EVID/04-attempt-b.txt" 2>&1
+            EMU_BIN="$ANDROID_HOME/emulator/emulator"
+            nohup "$EMU_BIN" @"$AVD" -port 5554 -no-window -no-audio -no-boot-anim \
+              -gpu swiftshader_indirect -accel on -memory 2048 -cores 2 \
+              -no-snapshot -verbose > "$EVID/emulator-b.log" 2>&1 &
+            EMU_PID=$!
+            echo "emulator_b_pid=$EMU_PID" >> "$EVID/04-attempt-b.txt"
+            timeout 90 adb -s emulator-5554 wait-for-device 2>&1; echo "wait_for_device_rc=$?" >> "$EVID/04-attempt-b.txt"
+            BOOTED=""
+            for i in $(seq 1 24); do
+              BC="$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')"
+              echo "poll $i: sys.boot_completed='$BC'" >> "$EVID/04-attempt-b.txt"
+              if [ "$BC" = "1" ]; then BOOTED=1; break; fi
+              sleep 20
+            done
+            {
+              echo "attempt_b_booted=$BOOTED"
+              if [ "$BOOTED" = "1" ]; then
+                B_ID="$(adb -s emulator-5554 shell settings get secure android_id 2>/dev/null | tr -d '\r')"
+                B_MARKER="$(adb -s emulator-5554 shell cat /sdcard/phonevault-marker-boot1.txt 2>/dev/null | tr -d '\r')"
+                echo "attempt_b_android_id=$B_ID"
+                echo "attempt_b_model=$(adb -s emulator-5554 shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+                echo "attempt_b_device=$(adb -s emulator-5554 shell getprop ro.product.device 2>/dev/null | tr -d '\r')"
+                echo "attempt_b_marker_readback=$B_MARKER"
+                if [ "$B_ID" = "$EXP_ID" ] && [ "$B_MARKER" = "$EXP_MARKER" ]; then
+                  echo "ATTEMPT_B_IDENTITY: SAME PHONE"
+                  echo "SAME" > "$EVID/identity-b.txt"
+                else
+                  echo "ATTEMPT_B_IDENTITY: LOST (expected id $EXP_ID marker $EXP_MARKER)"
+                  echo "LOST" > "$EVID/identity-b.txt"
+                fi
+              else
+                echo "ATTEMPT_B_IDENTITY: NOT EVALUATED - no boot within 8 min"
+                echo "NOBOOT" > "$EVID/identity-b.txt"
+              fi
+            } >> "$EVID/04-attempt-b.txt" 2>&1
+            adb -s emulator-5554 emu kill > /dev/null 2>&1; sleep 5
+            if kill -0 "$EMU_PID" 2>/dev/null; then kill "$EMU_PID" 2>/dev/null; sleep 3; kill -9 "$EMU_PID" 2>/dev/null; fi
+            {
+              echo "-- AVD folder AFTER attempt B boot + shutdown --"
+              for f in "$AVDDIR"/*; do stat -c '%n %s %y' "$f" 2>/dev/null; done
+              SHA_B2="$(sha256sum "$AVDDIR/userdata-qemu.img.qcow2" 2>/dev/null | awk '{print $1}')"
+              echo "postboot_userdata_qcow2_sha256=$SHA_B2"
+              if [ "$SHA_B2" = "$EXP_SHA" ]; then echo "postboot_qcow2: UNCHANGED by the boot"; else echo "postboot_qcow2: CHANGED by the boot"; fi
+              echo "===== 4c H2 EVIDENCE - the emulator's own userdata/encryption lines (attempt B log) ====="
+              grep -inE 'userdata|qcow2|encrypt|backing|snapshot|wipe' "$EVID/emulator-b.log" 2>/dev/null | head -80
+              echo "-- emulator errors/warnings (attempt B log) --"
+              grep -inE 'error|failed|warning|invalid|incompatible' "$EVID/emulator-b.log" 2>/dev/null | head -40
+            } >> "$EVID/04-attempt-b.txt" 2>&1
+          fi
+          cat "$EVID/04-attempt-b.txt"
+
+      - name: Diag step 5 of 5 - verdict assembly + commit output back
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          EVID=.pv-diag
+          OUT=restore-diagnosis-output.txt
+          H1="$(cat "$EVID/h1.txt" 2>/dev/null)"; [ -z "$H1" ] && H1="NOT EVALUATED"
+          IA="$(cat "$EVID/identity-a.txt" 2>/dev/null)"; [ -z "$IA" ] && IA="NOT RUN"
+          IB="$(cat "$EVID/identity-b.txt" 2>/dev/null)"; [ -z "$IB" ] && IB="NOT RUN"
+          {
+            echo "RESTORE DIAGNOSIS VERDICT (run No.9 IDENTITY LOST - why)"
+            echo "diagnosis_run_id: ${{ github.run_id }}  date_utc: $(date -u +%FT%TZ)"
+            echo "expected phone: android_id=$EXP_ID marker=$EXP_MARKER userdata_qcow2_sha256=$EXP_SHA"
+            echo ""
+            echo "H1 (file corrupted/altered in transport): integrity=$H1"
+            echo "  INTACT kills H1. DIFFERS confirms it."
+            echo "Attempt A (run No.9 replica - avdmanager scaffolding + untar over it): identity=$IA"
+            echo "Attempt B (clean room - empty hand-made folder, pack files only):      identity=$IB"
+            echo "H3 (the fresh AVD's stray files - esp. the userdata.img template - win over the restored state):"
+            if [ "$IA" = "LOST" ] && [ "$IB" = "SAME" ]; then
+              echo "  CONFIRMED - same pack, same runner: fresh scaffolding present = identity lost; scaffolding absent = identity kept."
+            elif [ "$IA" = "SAME" ] && [ "$IB" = "SAME" ]; then
+              echo "  NOT REPRODUCED - attempt A kept identity this time; run No.9's loss is not explained by H3 alone (flake or an A/B-shared cause)."
+            elif [ "$IB" = "LOST" ]; then
+              echo "  KILLED as the sole cause - identity lost even with NO fresh scaffolding present; look at H2's emulator-log lines."
+            else
+              echo "  UNRESOLVED - an attempt did not boot/run; read sections 3-4."
+            fi
+            echo "H2 (emulator rejected/reinitialized the restored userdata): judged from the emulator's own words -"
+            echo "  see 'H2 EVIDENCE' greps at the end of sections 3 and 4 (userdata/qcow2/encrypt/backing lines, verbatim)."
+            echo "  A line naming encryption, backing-file or format failure confirms H2 and states the mechanism."
+            echo "H4 (emulator/system-image version drift between pack and restore runners):"
+            echo "  This run's versions are captured in section 1. Run No.6's birth certificate recorded emulator_version EMPTY,"
+            echo "  so drift can be neither confirmed nor excluded from records; both runs installed 'latest' from sdkmanager"
+            echo "  on 2026-11-09 ~2h apart. H4 stays OPEN unless H2's log lines name a version/format incompatibility."
+            echo ""
+            echo "Full verbose emulator logs: artifact restore-diagnosis-logs (gzipped) on this run."
+            echo ""
+            for f in "$EVID"/0*.txt; do
+              [ -f "$f" ] || continue
+              echo "########## $f ##########"
+              cat "$f"
+              echo ""
+            done
+          } > "$OUT" 2>&1
+          cat "$OUT"
+          tar -czf .pv-diag-logs.tgz -C "$EVID" emulator-a.log emulator-b.log 2>/dev/null; ls -lh .pv-diag-logs.tgz 2>&1
+          git config user.name "cloud-android-probe"
+          git config user.email "probe@localhost"
+          git add restore-diagnosis-output.txt
+          git commit -m "restore diagnosis output [skip ci]" || exit 0
+          git push
+
+      - name: Upload full verbose emulator logs (artifact only, never committed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restore-diagnosis-logs
+          path: .pv-diag-logs.tgz
+          if-no-files-found: ignore
