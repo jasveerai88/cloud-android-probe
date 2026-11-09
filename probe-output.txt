@@ -1,0 +1,68 @@
+GITHUB CLOUD-ANDROID ENV PROBE v1
+date_utc: 2026-11-09T04:26:55Z
+===== runner env =====
+RUNNER_OS=Linux RUNNER_ARCH=X64 RUNNER_NAME=GitHub Actions 1000000543
+ImageOS=ubuntu24 ImageVersion=20261101.114.1
+===== 1 whoami / sudo =====
+runner
+uid=1001(runner) gid=1001(runner) groups=1001(runner),4(adm),100(users),117(docker),999(systemd-journal)
+sudo_n_rc=0
+===== 2 uname / cpu / ram / disk =====
+Linux ip-10-0-138-227 7.0.0-1014-aws #14~24.04.1-Ubuntu SMP PREEMPT Fri Sep 18 21:24:59 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+2
+model name	: Intel(R) Xeon(R) 6975P-C
+               total        used        free      shared  buff/cache   available
+Mem:           7.6Gi       823Mi       6.2Gi        43Mi       840Mi       6.8Gi
+Swap:             0B          0B          0B
+Filesystem            Size  Used Avail Use% Mounted on
+/dev/mapper/cow-root   72G   55G   17G  77% /
+/dev/mapper/cow-root   72G   55G   17G  77% /
+===== 3 devices kvm/binder/ashmem =====
+ls: cannot access '/dev/binder*': No such file or directory
+ls: cannot access '/dev/ashmem*': No such file or directory
+crw-rw---- 1 root kvm 10, 232 Nov  9 04:26 /dev/kvm
+ls: cannot access '/dev/binderfs': No such file or directory
+vmx_svm_count:
+1
+===== 4 kernel config binder =====
+CONFIG_ANDROID_BINDER_IPC=m
+CONFIG_ANDROID_BINDERFS=m
+CONFIG_ANDROID_BINDER_DEVICES=""
+config_grep_rc=0
+binder_linux.ko.zst
+===== 5 capabilities =====
+CapEff:	0000000000000000
+CapBnd:	000001ffffffffff
+0x0000000000000000=
+===== 6 docker =====
+/usr/bin/docker
+/usr/bin/podman
+Docker version 28.0.4, build b8034c0
+server=28.0.4 driver=overlay2
+ https://hub.docker.com/
+
+For more examples and ideas, visit:
+ https://docs.docker.com/get-started/
+
+docker_run_rc=0
+===== 7 modprobe binder =====
+modprobe_rc=0
+ls: cannot access '/dev/binder*': No such file or directory
+binder_linux          253952  0
+lsmod_binder_rc=0
+===== 8 android sdk / emulator prereqs =====
+ANDROID_HOME=/usr/local/lib/android/sdk ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+build-tools
+cmake
+cmdline-tools
+extras
+licenses
+ndk
+packages-list.txt
+platform-tools
+platforms
+/dev/kvm
+===== 9 virt =====
+amazon
+ls: cannot access '/.dockerenv': No such file or directory
+PROBE DONE
