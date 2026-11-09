@@ -1,2 +1,113 @@
-EMULATOR BOOT: NO BOOT - sys.boot_completed never reached 1 within the 12-minute bounded wait (see sections 3-4 + emulator console log tail)
+EMULATOR BOOT: NO BOOT - AVD creation failed, no config.ini (avdmanager_rc=0; boot skipped by design; FULL avdmanager output in section 02b below)
+
+########## .pv-evidence-final/00-baseline.txt ##########
+PHONEVAULT EMULATOR BOOT TEST v3.1
+v3.1 fixes over v3: avdmanager FULL output captured + its own return code recorded (v3 read the wrong PIPESTATUS slot of a tail pipeline and cut the output); pre-create device diagnostics with pixel_6 -> default-device fallback; CONFIG_MISSING hard-aborts before the boot section; adb wait-for-device bounded by timeout 90
+date_utc: 2026-11-09T06:18:36Z
+note: this run does NOT restore vault state - vault wiring comes after boot is proven (DESIGN.md section 9, step 1)
+===== 0 runner / kvm gate =====
+RUNNER_OS=Linux RUNNER_ARCH=X64 ImageOS=ubuntu24 ImageVersion=20261101.360.1
+Linux runnervm7aw5e 7.0.0-1017-azure #17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+2
+               total        used        free      shared  buff/cache   available
+Mem:           7.7Gi       831Mi       6.4Gi        40Mi       886Mi       6.9Gi
+Swap:          3.0Gi          0B       3.0Gi
+/dev/root        72G   59G   14G  82% /
+crw-rw---- 1 root kvm 10, 232 Nov  9 06:16 /dev/kvm
+KVM_GATE: PRESENT
+===== 0b kvm permissions (standard GitHub emulator step) =====
+KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
+crw-rw-rw- 1 root kvm 10, 232 Nov  9 06:18 /dev/kvm
+kvm_touch_rc=0 (0 = runner user can open the device)
+
+########## .pv-evidence-final/01-install.txt ##########
+===== 1 sdkmanager installs (emulator + platform-tools + system image) =====
+ANDROID_HOME=/usr/local/lib/android/sdk
+sdkmanager=/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+yes: standard output: Broken pipe
+licenses_rc=1
+Loading package information...                                                  Loading local repository...                                                     [                                       ] 3% Loading local repository...        [                                       ] 3% Fetch remote repository...         [=                                      ] 3% Fetch remote repository...         [=                                      ] 4% Fetch remote repository...         [=                                      ] 5% Fetch remote repository...         [==                                     ] 5% Fetch remote repository...         [==                                     ] 6% Fetch remote repository...         [==                                     ] 7% Fetch remote repository...         [==                                     ] 7% Computing updates...               [===                                    ] 8% Computing updates...               [===                                    ] 10% Computing updates...              [===                                    ] 10% Installing Android Emulator       [===                                    ] 10% Downloading emulator-linux_x64-167[====                                   ] 10% Downloading emulator-linux_x64-167[====                                   ] 11% Downloading emulator-linux_x64-167[====                                   ] 12% Downloading emulator-linux_x64-167[=====                                  ] 13% Downloading emulator-linux_x64-167[=====                                  ] 14% Downloading emulator-linux_x64-167[=====                                  ] 15% Downloading emulator-linux_x64-167[======                                 ] 15% Downloading emulator-linux_x64-167[======                                 ] 16% Downloading emulator-linux_x64-167[======                                 ] 17% Downloading emulator-linux_x64-167[=======                                ] 18% Downloading emulator-linux_x64-167[=======                                ] 19% Downloading emulator-linux_x64-167[=======                                ] 20% Downloading emulator-linux_x64-167[========                               ] 20% Downloading emulator-linux_x64-167[========                               ] 21% Downloading emulator-linux_x64-167[========                               ] 21% Unzipping...                      [========                               ] 21% Unzipping... emulator/            [========                               ] 21% Unzipping... emulator/resources/  [========                               ] 21% Unzipping... emulator/qsn         [========                               ] 21% Unzipping... emulator/emulator    [========                               ] 21% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/bin64/      [========                               ] 22% Unzipping... emulator/qemu/       [========                               ] 22% Unzipping... emulator/NOTICE.txt  [========                               ] 22% Unzipping... emulator/crashpad_han[========                               ] 22% Unzipping... emulator/source.prope[========                               ] 22% Unzipping... emulator/nimble_bridg[========                               ] 22% Unzipping... emulator/LICENSE     [========                               ] 22% Unzipping... emulator/lib/        [========                               ] 22% Unzipping... emulator/qemu-img    [========                               ] 22% Unzipping... emulator/include/    [========                               ] 22% Unzipping... emulator/NOTICE.csv  [========                               ] 22% Unzipping... emulator/lib64/      [========                               ] 22% Unzipping... emulator/emulator-che[========                               ] 22% Unzipping... emulator/crashreport [========                               ] 22% Unzipping... emulator/mksdcard    [========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/sk[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/po[========                               ] 22% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/sk[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/bin64/e2fsck[=========                              ] 23% Unzipping... emulator/bin64/fsck.e[=========                              ] 23% Unzipping... emulator/bin64/tune2f[=========                              ] 23% Unzipping... emulator/bin64/resize[=========                              ] 23% Unzipping... emulator/bin64/mkfs.e[=========                              ] 23% Unzipping... emulator/qemu/linux-x[=========                              ] 24% Unzipping... emulator/qemu/linux-x[=========                              ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 25% Unzipping... emulator/lib/emulator[==========                             ] 25% Unzipping... emulator/lib/rtc_serv[==========                             ] 25% Unzipping... emulator/lib/advanced[==========                             ] 25% Unzipping... emulator/lib/cmake/  [==========                             ] 25% Unzipping... emulator/lib/emulator[==========                             ] 25% Unzipping... emulator/lib/control_[==========                             ] 25% Unzipping... emulator/lib/emulated[==========                             ] 25% Unzipping... emulator/lib/rtc_serv[==========                             ] 25% Unzipping... emulator/lib/emu-orig[==========                             ] 25% Unzipping... emulator/lib/hardware[==========                             ] 25% Unzipping... emulator/lib/pkgconfi[==========                             ] 25% Unzipping... emulator/lib/pc-bios/[==========                             ] 25% Unzipping... emulator/lib/snapshot[==========                             ] 25% Unzipping... emulator/lib/adb_serv[==========                             ] 25% Unzipping... emulator/lib/hostapd.[==========                             ] 25% Unzipping... emulator/lib/grpc_end[==========                             ] 25% Unzipping... emulator/lib/ca-bundl[==========                             ] 25% Unzipping... emulator/lib/ui_contr[==========                             ] 25% Unzipping... emulator/lib/snapshot[==========                             ] 25% Unzipping... emulator/lib/ice_conf[==========                             ] 25% Unzipping... emulator/lib/libflatb[==========                             ] 26% Unzipping... emulator/lib/libflatb[==========                             ] 26% Unzipping... emulator/lib/emulator[==========                             ] 26% Unzipping... emulator/lib/waterfal[==========                             ] 26% Unzipping... emulator/lib/emulated[==========                             ] 26% Unzipping... emulator/lib/cmake/fl[==========                             ] 26% Unzipping... emulator/lib/pkgconfi[==========                             ] 26% Unzipping... emulator/lib/pc-bios/[==========                             ] 26% Unzipping... emulator/include/flat[==========                             ] 26% Unzipping... emulator/lib64/libgli[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/qt/   [==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libgfx[==========                             ] 26% Unzipping... emulator/lib64/gles_l[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/vulkan[==========                             ] 26% Unzipping... emulator/lib64/gles_s[==========                             ] 26% Unzipping... emulator/lib64/libemu[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libtcm[==========                             ] 26% Unzipping... emulator/lib64/libima[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libabs[==========                             ] 26% Unzipping... emulator/lib64/gles_a[==========                             ] 26% Unzipping... emulator/lib64/libsha[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 26% Unzipping... emulator/lib64/qt/lib[==========                             ] 26% Unzipping... emulator/lib64/qt/tra[==========                             ] 26% Unzipping... emulator/lib64/qt/plu[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/lib[===========                            ] 28% Unzipping... emulator/lib64/qt/lib[===========                            ] 29% Unzipping... emulator/lib64/qt/lib[===========                            ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/tra[============                           ] 30% Unzipping... emulator/lib64/qt/plu[============                           ] 30% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/gles_s[============                           ] 32% Unzipping... emulator/lib64/gles_a[=============                          ] 33% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Installing Google APIs Intel x86_6[=====================                  ] 55% Downloading x86_64-34_r14.zip... e[======================                 ] 55% Downloading x86_64-34_r14.zip... e[======================                 ] 56% Downloading x86_64-34_r14.zip... e[======================                 ] 57% Downloading x86_64-34_r14.zip... e[=======================                ] 58% Downloading x86_64-34_r14.zip... e[=======================                ] 59% Downloading x86_64-34_r14.zip... e[=======================                ] 60% Downloading x86_64-34_r14.zip... e[========================               ] 60% Downloading x86_64-34_r14.zip... e[========================               ] 61% Downloading x86_64-34_r14.zip... e[========================               ] 62% Downloading x86_64-34_r14.zip... e[=========================              ] 63% Downloading x86_64-34_r14.zip... e[=========================              ] 64% Downloading x86_64-34_r14.zip... e[=========================              ] 65% Downloading x86_64-34_r14.zip... e[==========================             ] 65% Downloading x86_64-34_r14.zip... e[==========================             ] 66% Downloading x86_64-34_r14.zip... e[==========================             ] 66% Unzipping... emulator/lib64/gles_a[==========================             ] 66% Unzipping... x86_64/NOTICE.txt    [==========================             ] 66% Unzipping... x86_64/VerifiedBootPa[==========================             ] 66% Unzipping... x86_64/advancedFeatur[==========================             ] 66% Unzipping... x86_64/build.prop    [==========================             ] 66% Unzipping... x86_64/encryptionkey.[==========================             ] 66% Unzipping... x86_64/kernel-ranchu [==========================             ] 66% Unzipping... x86_64/ramdisk.img   [==========================             ] 66% Unzipping... x86_64/source.propert[==========================             ] 66% Unzipping... x86_64/system.img    [==========================             ] 67% Unzipping... x86_64/system.img    [===========================            ] 68% Unzipping... x86_64/system.img    [===========================            ] 69% Unzipping... x86_64/system.img    [===========================            ] 70% Unzipping... x86_64/system.img    [============================           ] 70% Unzipping... x86_64/system.img    [============================           ] 71% Unzipping... x86_64/system.img    [============================           ] 72% Unzipping... x86_64/system.img    [=============================          ] 73% Unzipping... x86_64/system.img    [=============================          ] 74% Unzipping... x86_64/system.img    [=============================          ] 75% Unzipping... x86_64/system.img    [==============================         ] 75% Unzipping... x86_64/system.img    [==============================         ] 76% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/userdata.img  [==============================         ] 77% Unzipping... x86_64/vendor.img    [==============================         ] 77% Unzipping... x86_64/data/local.pro[==============================         ] 77% Unzipping... x86_64/data/misc/Gold[==============================         ] 77% Unzipping... x86_64/data/misc/apns[==============================         ] 77% Unzipping... x86_64/data/misc/emul[==============================         ] 77% Unzipping... x86_64/data/misc/gcec[==============================         ] 77% Unzipping... x86_64/data/misc/mode[==============================         ] 77% Unzipping... x86_64/data/misc/pixe[==============================         ] 78% Unzipping... x86_64/data/misc/pixe[=======================================] 100% Unzipping... x86_64/data/misc/pix
+
+install_rc=0
+/usr/local/lib/android/sdk/emulator/emulator
+NOTICE.txt
+VerifiedBootParams.textproto
+advancedFeatures.ini
+build.prop
+data
+encryptionkey.img
+kernel-ranchu
+package.xml
+
+########## .pv-evidence-final/02-avd.txt ##########
+===== 2 create AVD factoryphone (fixed PhoneVault profile) =====
+----- 2a pre-create diagnostics -----
+-- avdmanager list device, filtered for pixel_6 --
+---------
+id: 28 or "pixel_6"
+    Name: Pixel 6
+    OEM : Google
+---------
+id: 29 or "pixel_6_pro"
+    Name: Pixel 6 Pro
+    OEM : Google
+---------
+id: 30 or "pixel_6a"
+    Name: Pixel 6a
+    OEM : Google
+pixel_6_listed=1
+-- installed system-image dir --
+total 4364352
+drwxr-xr-x 3 runner runner       4096 Nov  9 06:19 .
+drwxr-xr-x 3 runner runner       4096 Nov  9 06:19 ..
+-rw-r--r-- 1 runner runner   19603789 Nov  9 06:19 NOTICE.txt
+-rw-r--r-- 1 runner runner        356 Nov  9 06:19 VerifiedBootParams.textproto
+-rw-r--r-- 1 runner runner        689 Nov  9 06:19 advancedFeatures.ini
+-rw-r--r-- 1 runner runner       5008 Nov  9 06:19 build.prop
+drwxr-xr-x 3 runner runner       4096 Nov  9 06:19 data
+-rw-r--r-- 1 runner runner   18874368 Nov  9 06:19 encryptionkey.img
+-rw-r--r-- 1 runner runner   17374688 Nov  9 06:19 kernel-ranchu
+-rw-r--r-- 1 runner runner      18749 Nov  9 06:19 package.xml
+-rw-r--r-- 1 runner runner    1820484 Nov  9 06:19 ramdisk.img
+-rw-r--r-- 1 runner runner        357 Nov  9 06:19 source.properties
+-rw-r--r-- 1 runner runner 4306501632 Nov  9 06:19 system.img
+-rw-r--r-- 1 runner runner    1048576 Nov  9 06:19 userdata.img
+-rw-r--r-- 1 runner runner  103809024 Nov  9 06:19 vendor.img
+-- sdkmanager --list_installed, system-images lines --
+  system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
+----- 2b create attempts (FULL avdmanager output in section 02b) -----
+attempt1: avdmanager_rc=0 device=pixel_6
+attempt2: avdmanager_rc=0 device=default
+avdmanager_rc=0
+device_used=default (no -d flag)
+config_path=/home/runner/.android/avd/factoryphone.avd/config.ini
+CONFIG_MISSING - AVD creation failed
+full avdmanager output (both attempts, uncut): section 02b (02b-avdmanager.txt)
+
+########## .pv-evidence-final/02b-avdmanager.txt ##########
+--- create attempt 1: -d pixel_6 ---
+Loading local repository...                                                     [=========                              ] 25% Loading local repository...       [=========                              ] 25% Fetch remote repository...        [=======================================] 100% Fetch remote repository...       
+Auto-selecting single ABI x86_64
+--- create attempt 2: no -d flag (default device) ---
+Loading local repository...                                                     [=========                              ] 25% Loading local repository...       [=========                              ] 25% Fetch remote repository...        [=======================================] 100% Fetch remote repository...       
+Auto-selecting single ABI x86_64
+Do you wish to create a custom hardware profile? [no] 
+########## .pv-evidence-final/03-boot.txt ##########
+===== 3 boot emulator headless (bounded wait 12 min) =====
+BOOT_SKIPPED=1 - AVD creation failed (CONFIG_MISSING, see sections 2 + 02b); boot NOT attempted - the job ends in minutes with a NO BOOT verdict instead of hanging
+BOOTED_FLAG=
+
+########## .pv-evidence-final/04-capture.txt ##########
+===== 4 capture identity + marker (only if booted) =====
+CAPTURE_OK=0 - not booted, no identity to capture
+--- emulator console log (tail 60) ---
+no emulator console log (boot not attempted - see section 3)
+
+########## .pv-evidence-final/05-shutdown.txt ##########
+===== 5 shutdown =====
+no emulator was started (boot skipped after CONFIG_MISSING)
+error: could not connect to TCP port 5554: Connection refused
+emu_kill_rc=1
+emulator process exited cleanly
+/dev/root        72G   64G  8.2G  89% /
 
