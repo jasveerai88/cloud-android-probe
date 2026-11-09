@@ -1,0 +1,76 @@
+name: cloud-android-probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/probe.yml"
+      - "TRIGGER.txt"
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Diagnostics
+        shell: bash
+        run: |
+          set +e
+          OUT=probe-output.txt
+          {
+            echo "GITHUB CLOUD-ANDROID ENV PROBE v1"
+            echo "date_utc: $(date -u +%FT%TZ)"
+            echo "===== runner env ====="
+            echo "RUNNER_OS=$RUNNER_OS RUNNER_ARCH=$RUNNER_ARCH RUNNER_NAME=$RUNNER_NAME"
+            echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+            echo "===== 1 whoami / sudo ====="
+            whoami; id
+            sudo -n true; echo "sudo_n_rc=$?"
+            echo "===== 2 uname / cpu / ram / disk ====="
+            uname -a
+            nproc; grep -m1 'model name' /proc/cpuinfo
+            free -h
+            df -h / /home/runner 2>&1
+            echo "===== 3 devices kvm/binder/ashmem ====="
+            ls -l /dev/kvm /dev/binder* /dev/ashmem* 2>&1
+            ls -ld /dev/binderfs 2>&1; grep binder /proc/filesystems 2>&1
+            echo "vmx_svm_count:"; grep -o -m1 -E 'vmx|svm' /proc/cpuinfo | wc -l
+            echo "===== 4 kernel config binder ====="
+            (zcat /proc/config.gz 2>/dev/null || cat /boot/config-$(uname -r) 2>/dev/null) | grep -i -E 'ANDROID_BINDER|ASHMEM' ; echo "config_grep_rc=$?"
+            ls /lib/modules/$(uname -r)/kernel/drivers/android/ 2>&1
+            echo "===== 5 capabilities ====="
+            grep -E 'CapEff|CapBnd' /proc/self/status
+            capsh --decode=$(grep CapEff /proc/self/status | awk '{print $2}') 2>&1 | head -3
+            echo "===== 6 docker ====="
+            which docker podman 2>&1; docker --version 2>&1
+            docker info --format 'server={{.ServerVersion}} driver={{.Driver}}' 2>&1 | head -2
+            timeout 120 docker run --rm hello-world 2>&1 | tail -5; echo "docker_run_rc=${PIPESTATUS[0]}"
+            echo "===== 7 modprobe binder ====="
+            sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" 2>&1; echo "modprobe_rc=$?"
+            ls -l /dev/binder* 2>&1
+            sudo lsmod 2>&1 | grep -i binder; echo "lsmod_binder_rc=$?"
+            echo "===== 8 android sdk / emulator prereqs ====="
+            echo "ANDROID_HOME=$ANDROID_HOME ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            ls $ANDROID_HOME 2>&1 | head; which emulator adb sdkmanager 2>&1
+            ls -w 1 /dev/kvm 2>&1
+            echo "===== 9 virt ====="
+            systemd-detect-virt 2>&1; ls /.dockerenv 2>&1
+            echo "PROBE DONE"
+          } > "$OUT" 2>&1
+          cat "$OUT"
+
+      - name: Commit probe output back
+        shell: bash
+        run: |
+          git config user.name "cloud-android-probe"
+          git config user.email "probe@localhost"
+          git add probe-output.txt
+          git commit -m "probe output [skip ci]" || exit 0
+          git push
