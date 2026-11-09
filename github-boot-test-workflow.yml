@@ -1,0 +1,210 @@
+name: cloud-android-boot-test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/boot-test.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  boot-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Boot test (baseline, BinderFS, Redroid, fallback emulator)
+        shell: bash
+        run: |
+          set +e
+          BODY=evidence-body.txt
+          RESULT_FILE=boot-result.txt
+          BOOT_RESULT="NO BOOT"
+          BOOT_REASON="not attempted"
+          echo "NO BOOT|not attempted" > "$RESULT_FILE"
+          {
+            echo "CLOUD ANDROID PHONE BOOT TEST v2"
+            echo "date_utc: $(date -u +%FT%TZ)"
+            echo "RUNNER_OS=$RUNNER_OS RUNNER_ARCH=$RUNNER_ARCH ImageVersion=$ImageVersion"
+            echo
+            echo "===== 1 BASELINE (kvm / binder / docker) ====="
+            ls -l /dev/kvm 2>&1
+            sudo modprobe binder_linux 2>&1; echo "modprobe_binder_rc=$?"
+            (zcat /proc/config.gz 2>/dev/null || cat /boot/config-$(uname -r) 2>/dev/null) | grep -E 'CONFIG_ANDROID_BINDER_IPC|CONFIG_ANDROID_BINDERFS|CONFIG_ANDROID_BINDER_DEVICES' 2>&1
+            docker --version 2>&1; timeout 60 docker run --rm hello-world >/dev/null 2>&1; echo "docker_hello_rc=$?"
+            echo
+            echo "===== 2 BINDERFS MOUNT ====="
+            sudo mkdir -p /dev/binderfs; echo "mkdir_binderfs_rc=$?"
+            sudo mount -t binder binder /dev/binderfs 2>&1; MOUNT_RC=$?
+            echo "mount_binderfs_rc=$MOUNT_RC"
+            if [ "$MOUNT_RC" -ne 0 ]; then
+              echo "--- plain mount failed; one retry with explicit devices option ---"
+              sudo mount -t binder binder -o devices=binder,hwbinder,vndbinder /dev/binderfs 2>&1; echo "mount_binderfs_devices_rc=$?"
+            fi
+            echo "--- ls -l /dev/binderfs ---"
+            ls -l /dev/binderfs 2>&1
+            echo "--- dmesg tail (binder/mount context) ---"
+            sudo dmesg 2>&1 | tail -30
+            # Redroid expects /dev/binder, /dev/hwbinder, /dev/vndbinder.
+            for n in binder hwbinder vndbinder; do
+              if [ -e "/dev/binderfs/$n" ] && [ ! -e "/dev/$n" ]; then
+                sudo ln -s "/dev/binderfs/$n" "/dev/$n" 2>&1; echo "symlink_$n rc=$?"
+              fi
+            done
+            echo "--- resulting /dev/binder* ---"
+            ls -l /dev/binder* 2>&1
+            if [ -e /dev/binder ]; then BINDER_OK=1; else BINDER_OK=0; fi
+            echo "binder_devices_present=$BINDER_OK"
+            echo
+            echo "===== 3 REDROID ATTEMPT ====="
+            ADB=""
+            [ -n "$ANDROID_HOME" ] && [ -x "$ANDROID_HOME/platform-tools/adb" ] && ADB="$ANDROID_HOME/platform-tools/adb"
+            [ -z "$ADB" ] && ADB="$(command -v adb)"
+            echo "adb_path=$ADB"
+            REDROID_BOOTED=0
+            if [ "$BINDER_OK" -eq 1 ]; then
+              mkdir -p "$GITHUB_WORKSPACE/redroid-data"
+              echo "--- docker pull (pinned image) ---"
+              timeout 600 docker pull redroid/redroid:14.0.0-latest 2>&1 | tail -5; echo "pull_rc=${PIPESTATUS[0]}"
+              echo "--- docker run ---"
+              docker rm -f redroid >/dev/null 2>&1
+              docker run -d --name redroid --privileged \
+                -p 127.0.0.1:5555:5555 \
+                --memory 3g --cpus 1.5 \
+                -v "$GITHUB_WORKSPACE/redroid-data:/data" \
+                redroid/redroid:14.0.0-latest 2>&1; echo "docker_run_rc=$?"
+              docker ps 2>&1
+              echo "--- wait for sys.boot_completed (max 10 min, poll 20s) ---"
+              "$ADB" kill-server >/dev/null 2>&1; "$ADB" start-server >/dev/null 2>&1
+              for i in $(seq 1 30); do
+                "$ADB" connect 127.0.0.1:5555 >/dev/null 2>&1
+                BC="$("$ADB" -s 127.0.0.1:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n ')"
+                echo "poll $i: sys.boot_completed='$BC'"
+                [ "$BC" = "1" ] && { REDROID_BOOTED=1; break; }
+                sleep 20
+              done
+              echo "redroid_booted=$REDROID_BOOTED"
+              echo "--- docker ps ---"; docker ps 2>&1
+              echo "--- docker logs tail 100 ---"; docker logs redroid 2>&1 | tail -100
+              echo "--- adb devices ---"; "$ADB" devices 2>&1
+              if [ "$REDROID_BOOTED" -eq 1 ]; then
+                echo "--- getprop (booted) ---"
+                "$ADB" -s 127.0.0.1:5555 shell getprop ro.build.version.release 2>&1
+                "$ADB" -s 127.0.0.1:5555 shell getprop ro.product.model 2>&1
+                echo "--- screenshot attempt (artifact, not committed) ---"
+                "$ADB" -s 127.0.0.1:5555 exec-out screencap -p > "$GITHUB_WORKSPACE/screenshot.png" 2>/dev/null; echo "screencap_rc=$?"
+                ls -l "$GITHUB_WORKSPACE/screenshot.png" 2>&1
+                echo "REDROID BOOTED|sys.boot_completed=1 via BinderFS + redroid/redroid:14.0.0-latest" > "$RESULT_FILE"
+              else
+                echo "REDROID FAILED|binder devices present but sys.boot_completed != 1 within 10 min (see docker logs above)" > "$RESULT_FILE"
+              fi
+            else
+              echo "SKIPPED: no /dev/binder device after BinderFS step (see section 2 + dmesg tail)."
+              echo "REDROID FAILED|BinderFS produced no /dev/binder device (see section 2 + dmesg tail)" > "$RESULT_FILE"
+            fi
+            echo
+            echo "===== 4 FALLBACK EMULATOR ATTEMPT (only if Redroid did not boot) ====="
+            EMU_BOOTED=0
+            if [ "$REDROID_BOOTED" -eq 1 ]; then
+              echo "SKIPPED: Redroid already booted."
+            else
+              echo "--- installed SDK packages / system images ---"
+              ls "$ANDROID_HOME" 2>&1
+              ls -R "$ANDROID_HOME/system-images" 2>&1 | head -40
+              SDkmanager_LIST=""
+              [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ] && SDkmanager_LIST="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+              [ -z "$SDkmanager_LIST" ] && SDkmanager_LIST="$(command -v sdkmanager)"
+              [ -n "$SDkmanager_LIST" ] && "$SDkmanager_LIST" --list_installed 2>&1 | head -40
+              IMG_DIR="$(find "$ANDROID_HOME/system-images" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | head -1)"
+              if [ -z "$IMG_DIR" ]; then
+                echo "no system image preinstalled - fallback untested"
+                echo "EMU SKIPPED|no system image preinstalled - fallback untested" >> "$RESULT_FILE"
+              else
+                REL="${IMG_DIR#$ANDROID_HOME/}"
+                PKG="$(echo "$REL" | sed 's#/#;#g')"
+                echo "using preinstalled system image package: $PKG (from $IMG_DIR)"
+                AVDMANAGER="$(command -v avdmanager)"; [ -z "$AVDMANAGER" ] && AVDMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
+                EMULATOR_BIN="$ANDROID_HOME/emulator/emulator"; [ -x "$EMULATOR_BIN" ] || EMULATOR_BIN="$(command -v emulator)"
+                echo "no" | "$AVDMANAGER" create avd -n boottest -k "$PKG" --force 2>&1 | tail -5; echo "create_avd_rc=${PIPESTATUS[1]}"
+                echo "--- boot emulator headless (accel on) ---"
+                nohup "$EMULATOR_BIN" @boottest -no-window -no-audio -no-boot-anim -accel on -memory 2048 -cores 2 > emulator.log 2>&1 &
+                echo "emulator_pid=$!"
+                "$ADB" kill-server >/dev/null 2>&1; "$ADB" start-server >/dev/null 2>&1
+                for i in $(seq 1 24); do
+                  BC="$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n ')"
+                  echo "emu poll $i: sys.boot_completed='$BC'"
+                  [ "$BC" = "1" ] && { EMU_BOOTED=1; break; }
+                  sleep 20
+                done
+                echo "emulator_booted=$EMU_BOOTED"
+                echo "--- adb devices ---"; "$ADB" devices 2>&1
+                echo "--- emulator log tail 50 ---"; tail -50 emulator.log 2>&1
+                if [ "$EMU_BOOTED" -eq 1 ]; then
+                  "$ADB" shell getprop ro.build.version.release 2>&1
+                  "$ADB" shell getprop ro.product.model 2>&1
+                  "$ADB" exec-out screencap -p > "$GITHUB_WORKSPACE/screenshot.png" 2>/dev/null; echo "emu_screencap_rc=$?"
+                  ls -l "$GITHUB_WORKSPACE/screenshot.png" 2>&1
+                  echo "EMULATOR BOOTED|SDK emulator booted on /dev/kvm with preinstalled image $PKG" > "$RESULT_FILE"
+                else
+                  echo "EMULATOR FAILED|sys.boot_completed != 1 within 8 min (see emulator log above)" >> "$RESULT_FILE"
+                fi
+                "$ADB" emu kill >/dev/null 2>&1
+              fi
+            fi
+            echo
+            echo "BOOT TEST DONE"
+          } > "$BODY" 2>&1
+          cat "$BODY"
+          # Normalise the result file to exactly one verdict line for the output step.
+          if grep -q '^REDROID BOOTED|' "$RESULT_FILE"; then
+            grep '^REDROID BOOTED|' "$RESULT_FILE" | head -1 > result-clean.txt
+          elif grep -q '^EMULATOR BOOTED|' "$RESULT_FILE"; then
+            grep '^EMULATOR BOOTED|' "$RESULT_FILE" | head -1 > result-clean.txt
+          else
+            REASON="$(grep -E '^(REDROID FAILED|EMU SKIPPED|EMULATOR FAILED)\|' "$RESULT_FILE" | head -2 | sed 's/|/ - /' | paste -sd';' -)"
+            [ -z "$REASON" ] && REASON="no engine booted (see evidence)"
+            echo "NO BOOT|$REASON" > result-clean.txt
+          fi
+          mv result-clean.txt "$RESULT_FILE"
+          cat "$RESULT_FILE"
+
+      - name: Upload screenshot artifact (if a phone booted)
+        if: always() && hashFiles('screenshot.png') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-screenshot
+          path: screenshot.png
+          if-no-files-found: ignore
+
+      - name: Cleanup and commit boot test output back
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker rm -f redroid >/dev/null 2>&1; echo "cleanup_docker_rc=$?"
+          RAW="$(cat boot-result.txt 2>/dev/null || echo 'NO BOOT|result file missing - job failed before verdict')"
+          VERDICT="${RAW%%|*}"; REASON="${RAW#*|}"
+          case "$VERDICT" in
+            "REDROID BOOTED")  FIRST="BOOT RESULT: REDROID BOOTED" ;;
+            "EMULATOR BOOTED") FIRST="BOOT RESULT: EMULATOR BOOTED" ;;
+            *)                 FIRST="BOOT RESULT: NO BOOT — $REASON" ;;
+          esac
+          if [ "$VERDICT" = "REDROID BOOTED" ] || [ "$VERDICT" = "EMULATOR BOOTED" ]; then
+            [ -n "$REASON" ] && [ "$REASON" != "$VERDICT" ] && FIRST="$FIRST - $REASON"
+          fi
+          {
+            echo "$FIRST"
+            echo
+            cat evidence-body.txt 2>/dev/null || echo "evidence-body.txt missing - main step did not complete"
+          } > boot-test-output.txt
+          cat boot-test-output.txt
+          git config user.name "cloud-android-boot-test"
+          git config user.email "boot-test@localhost"
+          git add boot-test-output.txt
+          git commit -m "boot test output [skip ci]" || exit 0
+          git push
