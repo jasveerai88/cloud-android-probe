@@ -1,0 +1,194 @@
+DIAGNOSIS: AVD FOUND AT /home/runner/.config/.android/avd/factoryphone.avd/config.ini
+
+########## .diag-evidence/00-env.txt ##########
+===== 0 environment (AVD-home resolution inputs) =====
+date_utc: 2026-11-09T07:13:21Z
+HOME=/home/runner
+ANDROID_HOME=/usr/local/lib/android/sdk
+ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+ANDROID_AVD_HOME=<unset>
+ANDROID_USER_HOME=<unset>
+ANDROID_SDK_HOME=<unset>
+GITHUB_WORKSPACE=/home/runner/work/cloud-android-probe/cloud-android-probe
+-- full ANDROID_* / JAVA_* environment --
+ANDROID_HOME=/usr/local/lib/android/sdk
+ANDROID_NDK=/usr/local/lib/android/sdk/ndk/27.3.13750724
+ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/27.3.13750724
+ANDROID_NDK_LATEST_HOME=/usr/local/lib/android/sdk/ndk/30.0.16248370
+ANDROID_NDK_ROOT=/usr/local/lib/android/sdk/ndk/27.3.13750724
+ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+JAVA_HOME=/usr/lib/jvm/temurin-17-jdk-amd64
+JAVA_HOME_11_X64=/usr/lib/jvm/temurin-11-jdk-amd64
+JAVA_HOME_17_X64=/usr/lib/jvm/temurin-17-jdk-amd64
+JAVA_HOME_21_X64=/usr/lib/jvm/temurin-21-jdk-amd64
+JAVA_HOME_25_X64=/usr/lib/jvm/temurin-25-jdk-amd64
+JAVA_HOME_8_X64=/usr/lib/jvm/temurin-8-jdk-amd64
+-- identity / disk --
+uid=1001(runner) gid=1001(runner) groups=1001(runner),4(adm),100(users),118(docker),999(systemd-journal)
+/dev/root        72G   59G   14G  82% /
+-- java version --
+openjdk version "17.0.21" 2026-10-20
+OpenJDK Runtime Environment Temurin-17.0.21+9 (build 17.0.21+9)
+OpenJDK 64-Bit Server VM Temurin-17.0.21+9 (build 17.0.21+9, mixed mode, sharing)
+-- tool versions --
+sdkmanager_path=/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+avdmanager_path=/usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager
+12.0
+
+-- cmdline-tools source.properties (Pkg.Revision = cmdline-tools version) --
+Pkg.Revision=12.0
+Pkg.Path=cmdline-tools;12.0
+Pkg.Desc=Android SDK Command-line Tools
+-- HOME and ~/.android BEFORE any create --
+total 60
+drwxr-x---  11 runner runner 4096 Nov  9 07:13 .
+drwxr-xr-x+  5 root   root   4096 Nov  1 22:04 ..
+-rw-r--r--   1 runner runner  220 Mar 31  2024 .bash_logout
+-rw-r--r--   1 runner runner   67 Nov  1 21:25 .bash_profile
+-rw-r--r--   1 runner runner 3771 Mar 31  2024 .bashrc
+drwxr-xr-x   3 runner runner 4096 Nov  1 21:28 .cargo
+drwxr-xr-x   2 runner runner 4096 Nov  1 21:27 .composer
+drwxr-xr-x   4 runner runner 4096 Nov  9 07:13 .config
+drwxr-xr-x   2 runner docker 4096 Nov  1 22:07 .docker
+drwxr-xr-x   3 runner runner 4096 Nov  1 21:15 .dotnet
+lrwxrwxrwx   1 runner runner   17 Nov  1 21:21 .ghcup -> /usr/local/.ghcup
+drwxr-xr-x   5 runner runner 4096 Nov  1 21:25 .nvm
+-rw-r--r--   1 runner runner  807 Mar 31  2024 .profile
+drwxr-xr-x   6 runner runner 4096 Nov  1 21:28 .rustup
+drwxrwxr-x   3 runner runner 4096 Nov  9 07:13 actions-runner
+drwxr-xr-x   6 runner runner 4096 Nov  9 07:13 work
+ls: cannot access '/home/runner/.android': No such file or directory
+ls: cannot access '/home/runner/.android/avd': No such file or directory
+-- writability probe of the checked AVD home (H2 discriminator) --
+mkdir_rc=0
+touch_rc=0
+total 8
+drwxr-xr-x 2 runner runner 4096 Nov  9 07:13 .
+drwxr-xr-x 3 runner runner 4096 Nov  9 07:13 ..
+-rw-r--r-- 1 runner runner    0 Nov  9 07:13 .diag-write-test
+
+########## .diag-evidence/01-install.txt ##########
+===== 1 sdkmanager install (system image ONLY, same package as v3.1) =====
+sdkmanager=/usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+yes: standard output: Broken pipe
+licenses_rc=1 (broken-pipe rc here is cosmetic; install_rc below is the real signal)
+Loading package information...                                                  Loading local repository...                                                     [                                       ] 3% Loading local repository...        [                                       ] 3% Fetch remote repository...         [=                                      ] 3% Fetch remote repository...         [=                                      ] 4% Fetch remote repository...         [=                                      ] 5% Fetch remote repository...         [==                                     ] 5% Fetch remote repository...         [==                                     ] 6% Fetch remote repository...         [==                                     ] 7% Fetch remote repository...         [==                                     ] 7% Computing updates...               [===                                    ] 8% Computing updates...               [===                                    ] 10% Computing updates...              [===                                    ] 10% Installing Android Emulator       [===                                    ] 10% Downloading emulator-linux_x64-167[====                                   ] 10% Downloading emulator-linux_x64-167[====                                   ] 11% Downloading emulator-linux_x64-167[====                                   ] 12% Downloading emulator-linux_x64-167[=====                                  ] 13% Downloading emulator-linux_x64-167[=====                                  ] 14% Downloading emulator-linux_x64-167[=====                                  ] 15% Downloading emulator-linux_x64-167[======                                 ] 15% Downloading emulator-linux_x64-167[======                                 ] 16% Downloading emulator-linux_x64-167[======                                 ] 17% Downloading emulator-linux_x64-167[=======                                ] 18% Downloading emulator-linux_x64-167[=======                                ] 19% Downloading emulator-linux_x64-167[=======                                ] 20% Downloading emulator-linux_x64-167[========                               ] 20% Downloading emulator-linux_x64-167[========                               ] 21% Downloading emulator-linux_x64-167[========                               ] 21% Unzipping...                      [========                               ] 21% Unzipping... emulator/            [========                               ] 21% Unzipping... emulator/resources/  [========                               ] 21% Unzipping... emulator/qsn         [========                               ] 21% Unzipping... emulator/emulator    [========                               ] 21% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/netsimd     [========                               ] 22% Unzipping... emulator/bin64/      [========                               ] 22% Unzipping... emulator/qemu/       [========                               ] 22% Unzipping... emulator/NOTICE.txt  [========                               ] 22% Unzipping... emulator/crashpad_han[========                               ] 22% Unzipping... emulator/source.prope[========                               ] 22% Unzipping... emulator/nimble_bridg[========                               ] 22% Unzipping... emulator/LICENSE     [========                               ] 22% Unzipping... emulator/lib/        [========                               ] 22% Unzipping... emulator/qemu-img    [========                               ] 22% Unzipping... emulator/include/    [========                               ] 22% Unzipping... emulator/NOTICE.csv  [========                               ] 22% Unzipping... emulator/lib64/      [========                               ] 22% Unzipping... emulator/emulator-che[========                               ] 22% Unzipping... emulator/crashreport [========                               ] 22% Unzipping... emulator/mksdcard    [========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/To[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/sk[========                               ] 22% Unzipping... emulator/resources/de[========                               ] 22% Unzipping... emulator/resources/ma[========                               ] 22% Unzipping... emulator/resources/po[========                               ] 22% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/resources/sk[=========                              ] 23% Unzipping... emulator/resources/ma[=========                              ] 23% Unzipping... emulator/bin64/e2fsck[=========                              ] 23% Unzipping... emulator/bin64/fsck.e[=========                              ] 23% Unzipping... emulator/bin64/tune2f[=========                              ] 23% Unzipping... emulator/bin64/resize[=========                              ] 23% Unzipping... emulator/bin64/mkfs.e[=========                              ] 23% Unzipping... emulator/qemu/linux-x[=========                              ] 24% Unzipping... emulator/qemu/linux-x[=========                              ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 25% Unzipping... emulator/qemu/linux-x[==========                             ] 25% Unzipping... emulator/lib/emulator[==========                             ] 25% Unzipping... emulator/lib/rtc_serv[==========                             ] 25% Unzipping... emulator/lib/advanced[==========                             ] 25% Unzipping... emulator/lib/cmake/  [==========                             ] 25% Unzipping... emulator/lib/emulator[==========                             ] 25% Unzipping... emulator/lib/control_[==========                             ] 25% Unzipping... emulator/lib/emulated[==========                             ] 25% Unzipping... emulator/lib/rtc_serv[==========                             ] 25% Unzipping... emulator/lib/emu-orig[==========                             ] 25% Unzipping... emulator/lib/hardware[==========                             ] 25% Unzipping... emulator/lib/pkgconfi[==========                             ] 25% Unzipping... emulator/lib/pc-bios/[==========                             ] 25% Unzipping... emulator/lib/snapshot[==========                             ] 25% Unzipping... emulator/lib/adb_serv[==========                             ] 25% Unzipping... emulator/lib/hostapd.[==========                             ] 25% Unzipping... emulator/lib/grpc_end[==========                             ] 25% Unzipping... emulator/lib/ca-bundl[==========                             ] 25% Unzipping... emulator/lib/ui_contr[==========                             ] 25% Unzipping... emulator/lib/snapshot[==========                             ] 25% Unzipping... emulator/lib/ice_conf[==========                             ] 25% Unzipping... emulator/lib/libflatb[==========                             ] 26% Unzipping... emulator/lib/libflatb[==========                             ] 26% Unzipping... emulator/lib/emulator[==========                             ] 26% Unzipping... emulator/lib/waterfal[==========                             ] 26% Unzipping... emulator/lib/emulated[==========                             ] 26% Unzipping... emulator/lib/cmake/fl[==========                             ] 26% Unzipping... emulator/lib/pkgconfi[==========                             ] 26% Unzipping... emulator/lib/pc-bios/[==========                             ] 26% Unzipping... emulator/include/flat[==========                             ] 26% Unzipping... emulator/lib64/libgli[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/qt/   [==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libgfx[==========                             ] 26% Unzipping... emulator/lib64/gles_l[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/vulkan[==========                             ] 26% Unzipping... emulator/lib64/gles_s[==========                             ] 26% Unzipping... emulator/lib64/libemu[==========                             ] 26% Unzipping... emulator/lib64/libpro[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libtcm[==========                             ] 26% Unzipping... emulator/lib64/libima[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/liband[==========                             ] 26% Unzipping... emulator/lib64/libabs[==========                             ] 26% Unzipping... emulator/lib64/gles_a[==========                             ] 26% Unzipping... emulator/lib64/libsha[==========                             ] 26% Unzipping... emulator/lib64/libc++[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 26% Unzipping... emulator/lib64/qt/lib[==========                             ] 26% Unzipping... emulator/lib64/qt/tra[==========                             ] 26% Unzipping... emulator/lib64/qt/plu[==========                             ] 26% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/res[==========                             ] 27% Unzipping... emulator/lib64/qt/lib[===========                            ] 28% Unzipping... emulator/lib64/qt/lib[===========                            ] 29% Unzipping... emulator/lib64/qt/lib[===========                            ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/lib[============                           ] 30% Unzipping... emulator/lib64/qt/tra[============                           ] 30% Unzipping... emulator/lib64/qt/plu[============                           ] 30% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/gles_l[============                           ] 31% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/vulkan[============                           ] 32% Unzipping... emulator/lib64/gles_s[============                           ] 32% Unzipping... emulator/lib64/gles_a[=============                          ] 33% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Unzipping... emulator/lib64/gles_a[=====================                  ] 55% Installing Google APIs Intel x86_6[=====================                  ] 55% Downloading x86_64-34_r14.zip... e[======================                 ] 55% Downloading x86_64-34_r14.zip... e[======================                 ] 56% Downloading x86_64-34_r14.zip... e[======================                 ] 57% Downloading x86_64-34_r14.zip... e[=======================                ] 58% Downloading x86_64-34_r14.zip... e[=======================                ] 59% Downloading x86_64-34_r14.zip... e[=======================                ] 60% Downloading x86_64-34_r14.zip... e[========================               ] 60% Downloading x86_64-34_r14.zip... e[========================               ] 61% Downloading x86_64-34_r14.zip... e[========================               ] 62% Downloading x86_64-34_r14.zip... e[=========================              ] 63% Downloading x86_64-34_r14.zip... e[=========================              ] 64% Downloading x86_64-34_r14.zip... e[=========================              ] 65% Downloading x86_64-34_r14.zip... e[==========================             ] 65% Downloading x86_64-34_r14.zip... e[==========================             ] 66% Downloading x86_64-34_r14.zip... e[==========================             ] 66% Unzipping... emulator/lib64/gles_a[==========================             ] 66% Unzipping... x86_64/NOTICE.txt    [==========================             ] 66% Unzipping... x86_64/VerifiedBootPa[==========================             ] 66% Unzipping... x86_64/advancedFeatur[==========================             ] 66% Unzipping... x86_64/build.prop    [==========================             ] 66% Unzipping... x86_64/encryptionkey.[==========================             ] 66% Unzipping... x86_64/kernel-ranchu [==========================             ] 66% Unzipping... x86_64/ramdisk.img   [==========================             ] 66% Unzipping... x86_64/source.propert[==========================             ] 66% Unzipping... x86_64/system.img    [==========================             ] 67% Unzipping... x86_64/system.img    [===========================            ] 68% Unzipping... x86_64/system.img    [===========================            ] 69% Unzipping... x86_64/system.img    [===========================            ] 70% Unzipping... x86_64/system.img    [============================           ] 70% Unzipping... x86_64/system.img    [============================           ] 71% Unzipping... x86_64/system.img    [============================           ] 72% Unzipping... x86_64/system.img    [=============================          ] 73% Unzipping... x86_64/system.img    [=============================          ] 74% Unzipping... x86_64/system.img    [=============================          ] 75% Unzipping... x86_64/system.img    [==============================         ] 75% Unzipping... x86_64/system.img    [==============================         ] 76% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/system.img    [==============================         ] 77% Unzipping... x86_64/userdata.img  [==============================         ] 77% Unzipping... x86_64/vendor.img    [==============================         ] 77% Unzipping... x86_64/data/local.pro[==============================         ] 77% Unzipping... x86_64/data/misc/Gold[==============================         ] 77% Unzipping... x86_64/data/misc/apns[==============================         ] 77% Unzipping... x86_64/data/misc/emul[==============================         ] 77% Unzipping... x86_64/data/misc/gcec[==============================         ] 77% Unzipping... x86_64/data/misc/mode[==============================         ] 77% Unzipping... x86_64/data/misc/pixe[==============================         ] 78% Unzipping... x86_64/data/misc/pixe[=======================================] 100% Unzipping... x86_64/data/misc/pix
+
+install_rc=0
+-- installed system-image dir --
+NOTICE.txt
+VerifiedBootParams.textproto
+advancedFeatures.ini
+build.prop
+data
+encryptionkey.img
+kernel-ranchu
+package.xml
+  system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
+
+########## .diag-evidence/02-create.txt ##########
+===== 2 create AVD - EXACT replica of v3.1 attempt 1 (-d pixel_6) =====
+create_rc=0
+checked_config_path=/home/runner/.android/avd/factoryphone.avd/config.ini
+CHECKED_CFG_EXISTS=0 - config.ini NOT at the path v3.1 checked
+-- ~/.android tree immediately after create --
+/home/runner/.android:
+total 12
+drwxr-xr-x  3 runner runner 4096 Nov  9 07:13 .
+drwxr-x--- 12 runner runner 4096 Nov  9 07:13 ..
+drwxr-xr-x  2 runner runner 4096 Nov  9 07:13 avd
+
+/home/runner/.android/avd:
+total 8
+drwxr-xr-x 2 runner runner 4096 Nov  9 07:13 .
+drwxr-xr-x 3 runner runner 4096 Nov  9 07:13 ..
+full avdmanager output (uncut): section 02b (02b-create-full.txt)
+
+########## .diag-evidence/02b-create-full.txt ##########
+--- create attempt 1 (diagnosis): -d pixel_6, stdin from answer file, no pipeline ---
+Loading local repository...                                                     [=========                              ] 25% Loading local repository...       [=========                              ] 25% Fetch remote repository...        [=======================================] 100% Fetch remote repository...       
+Auto-selecting single ABI x86_64
+--- create attempt 2 (diagnosis): identical to attempt 1 except ANDROID_AVD_HOME is set ---
+Loading local repository...                                                     [=========                              ] 25% Loading local repository...       [=========                              ] 25% Fetch remote repository...        [=======================================] 100% Fetch remote repository...       
+Auto-selecting single ABI x86_64
+
+########## .diag-evidence/03-search.txt ##########
+===== 3 search - where did the AVD actually go? =====
+-- find, verbatim as specified --
+/home/runner/.config/.android/avd/factoryphone.ini
+/home/runner/.config/.android/avd/factoryphone.avd
+/home/runner/.config/.android/avd/factoryphone.avd/config.ini
+-- find, parenthesised equivalent (same intent, unambiguous grouping) --
+/home/runner/.config/.android/avd/factoryphone.ini
+/home/runner/.config/.android/avd/factoryphone.avd
+/home/runner/.config/.android/avd/factoryphone.avd/config.ini
+-- supplemental roots (workspace, /tmp, /root) --
+-- any *.avd directories under the searched roots --
+/home/runner/.config/.android/avd/factoryphone.avd
+-- first config.ini found (if any) --
+found_config_ini=/home/runner/.config/.android/avd/factoryphone.avd/config.ini
+-- ls -laR of every candidate AVD dir --
+---- ls -laR /home/runner/.android/avd ----
+/home/runner/.android/avd:
+total 8
+drwxr-xr-x 2 runner runner 4096 Nov  9 07:13 .
+drwxr-xr-x 3 runner runner 4096 Nov  9 07:13 ..
+---- ls -laR .diag-evidence/find-paren.txt:/home/runner/.config/.android/avd/factoryphone.avd ----
+ls: cannot access '.diag-evidence/find-paren.txt:/home/runner/.config/.android/avd/factoryphone.avd': No such file or directory
+---- ls -laR .diag-evidence/find-paren.txt:/home/runner/.config/.android/avd ----
+ls: cannot access '.diag-evidence/find-paren.txt:/home/runner/.config/.android/avd': No such file or directory
+---- ls -laR .diag-evidence/find-verbatim.txt:/home/runner/.config/.android/avd/factoryphone.avd ----
+ls: cannot access '.diag-evidence/find-verbatim.txt:/home/runner/.config/.android/avd/factoryphone.avd': No such file or directory
+---- ls -laR .diag-evidence/find-verbatim.txt:/home/runner/.config/.android/avd ----
+ls: cannot access '.diag-evidence/find-verbatim.txt:/home/runner/.config/.android/avd': No such file or directory
+-- avdmanager list avd (avdmanager's OWN view of where its AVDs live) --
+Available Android Virtual Devices:
+    Name: factoryphone
+  Device: pixel_6 (Google)
+    Path: /home/runner/.config/.android/avd/factoryphone.avd
+  Target: Google APIs (Google Inc.)
+          Based on: Android 14.0 ("UpsideDownCake") Tag/ABI: google_apis/x86_64
+  Sdcard: 512 MB
+
+########## .diag-evidence/04-explicit-home.txt ##########
+===== 4 retry create with ANDROID_AVD_HOME set explicitly =====
+ANDROID_AVD_HOME=/home/runner/.android/avd
+retry_rc=0
+-- check BOTH paths --
+explicit_home_config: EXISTS at /home/runner/.android/avd/factoryphone.avd/config.ini
+originally_checked_config: EXISTS at /home/runner/.android/avd/factoryphone.avd/config.ini
+-- avdmanager list avd WITH ANDROID_AVD_HOME set --
+Available Android Virtual Devices:
+    Name: factoryphone
+  Device: pixel_6 (Google)
+    Path: /home/runner/.android/avd/factoryphone.avd
+  Target: Google APIs (Google Inc.)
+          Based on: Android 14.0 ("UpsideDownCake") Tag/ABI: google_apis/x86_64
+  Sdcard: 512 MB
+-- search again after retry --
+/home/runner/.android/avd/factoryphone.ini
+/home/runner/.android/avd/factoryphone.avd
+/home/runner/.android/avd/factoryphone.avd/config.ini
+/home/runner/.config/.android/avd/factoryphone.ini
+/home/runner/.config/.android/avd/factoryphone.avd
+/home/runner/.config/.android/avd/factoryphone.avd/config.ini
+
+########## .diag-evidence/05-hypotheses.txt ##########
+===== 5 hypothesis assessment (from the evidence above) =====
+checked_path=/home/runner/.android/avd/factoryphone.avd/config.ini
+found_config_ini=/home/runner/.config/.android/avd/factoryphone.avd/config.ini
+create_rc=0 retry_rc=0 retry_ok=1
+
+-- H1: AVD was created under a DIFFERENT AVD home than the path checked --
+H1: CONFIRMED - config.ini exists at /home/runner/.config/.android/avd/factoryphone.avd/config.ini, not at the checked path. The create in run #2 succeeded; v3.1 simply looked in the wrong place.
+
+-- H2: silent write failure (permissions / space / read-only ~/.android) --
+writability probe touch_rc=0 (section 0); disk line in section 0.
+H2: KILLED - the home is writable (touch_rc=0) and an AVD write did land on this runner.
+
+-- H3: stdin answer-file handling cut the create flow mid-prompt --
+H3: KILLED as the cause - attempt 2 used the IDENTICAL answer file and stdin handling; only ANDROID_AVD_HOME changed, and the create completed. Same stdin, different outcome => stdin was not the discriminator.
+
+-- H4: cmdline-tools quirk - create exits 0 without writing when image package-path resolution fails --
+H4: KILLED - an AVD was in fact created and located on this runner with the same cmdline-tools and the same image package.
+
