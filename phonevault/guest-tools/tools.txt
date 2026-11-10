@@ -1,0 +1,9 @@
+# PhoneVault guest-tools manifest - read by the wake workflow (v4.8, step 14b)
+# and by guest-fetch.sh. One tool per line, three space-separated fields:
+#   <filename in this folder> <sha256 of the file> <name it gets in the guest>
+# The workflow verifies the sha256 host-side BEFORE anything is pushed; a
+# mismatch means the tool is refused, never pushed. Tools land in
+# /data/local/tmp in the guest: per-wake tooling only (that folder does not
+# persist across wakes, and nothing here is part of the phone's identity).
+# Provenance for each entry: see README.md in this folder.
+curl-x86_64 715f85aae6d9caeca203f7c1f8697b02193c53f8dd6112d54647f0777290f23e pv-curl
