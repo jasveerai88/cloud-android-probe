@@ -1,0 +1,10 @@
+# PhoneVault side-load manifest - read by the wake workflow (v4.3, step 15)
+# at every wake. One app per line, whitespace-separated fields:
+#   <apk filename>  <sha256 of the apk file>  <android package name>
+# Blank lines and lines starting with # are ignored. The filename must be
+# a BARE filename (no directories) and the file must sit beside this
+# manifest. The wake step verifies the sha256 BEFORE install; a mismatch,
+# a missing file or a failed install is logged as an APP: line and that
+# app is skipped - an app outcome NEVER fails or alters the wake verdict.
+# Provenance of each entry (source URL + date pinned) is in README.md.
+F-Droid.apk 19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52 org.fdroid.fdroid
