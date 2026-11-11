@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-# PhoneVault live-view fallback (v4.4, Lane 1 design): slideshow + tap control.
+# PhoneVault live-view fallback (v5.0; v4.4 Lane 1 design): slideshow + tap control.
+# v5.0 page fix: every subresource path is RELATIVE (frame.png, tap, key,
+# text) - never absolute. Absolute paths escaped both prefixes the page is
+# served under (/<TOKEN>/ and /fallback/), so the gate routed the image and
+# the controls to the video port and a real browser never received a frame
+# (run #44). Relative paths resolve under whichever prefix served the page.
 # HONEST LABEL: this is NOT video. adb screencap costs ~0.7-3 s per frame, so
 # expect roughly 0.3-1 fps: enough to see the phone's state and act on it
 # deliberately, not to watch motion.
@@ -55,7 +60,7 @@ img{width:100%;max-width:480px;border:1px solid #444}
 button{font-size:16px;padding:10px 14px;margin:4px}
 input{font-size:16px;padding:10px;width:60%}</style></head><body>
 <p>PhoneVault live view &mdash; slideshow (not video). Tap the picture to tap the phone.</p>
-<img id="f" src="/frame.png" alt="phone screen">
+<img id="f" src="frame.png" alt="phone screen">
 <div>
 <button onclick="key(3)">Home</button><button onclick="key(4)">Back</button>
 <button onclick="key(187)">Recents</button><button onclick="key(26)">Power</button>
@@ -65,16 +70,19 @@ input{font-size:16px;padding:10px;width:60%}</style></head><body>
 <p id="s"></p>
 <script>
 const img=document.getElementById('f');
-setInterval(()=>{img.src='/frame.png?'+Date.now()},1500);
+const st=document.getElementById('s');
+img.addEventListener('load',()=>{st.textContent='live';});
+img.addEventListener('error',()=>{st.textContent='frame not loaded yet - retrying every 1.5s';});
+setInterval(()=>{img.src='frame.png?'+Date.now()},1500);
 img.addEventListener('click',e=>{
   const r=img.getBoundingClientRect();
   const x=(e.clientX-r.left)/r.width, y=(e.clientY-r.top)/r.height;
-  fetch('/tap',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'x='+x+'&y='+y}).then(()=>{document.getElementById('s').textContent='tapped';});
+  fetch('tap',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'x='+x+'&y='+y}).then(()=>{st.textContent='tapped';});
 });
-function key(c){fetch('/key',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'code='+c});}
+function key(c){fetch('key',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'code='+c});}
 function sendText(){const v=document.getElementById('t').value;
-  fetch('/text',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'text='+encodeURIComponent(v)});}
+  fetch('text',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'text='+encodeURIComponent(v)});}
 </script></body></html>"""
 
 
