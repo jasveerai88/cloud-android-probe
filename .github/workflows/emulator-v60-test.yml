@@ -3341,6 +3341,8 @@ jobs:
           echo "live + egress evidence merged into .pv-evidence-final"
       - name: PhoneVault step 15 of 15 - production wake part 2 - second reboot + verdict + re-pack + app side-load (v4.3, wake mode only)
         shell: bash
+        env:
+          PV_APPS: ${{ inputs.install_apps }}
         run: |
           set +e
           EVID=.pv-evidence
@@ -3521,7 +3523,7 @@ jobs:
               fi
               echo "-- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --"
               APPSTAT="$EVID/prod-app-status.txt"; : > "$APPSTAT"
-              PV_APPS="${{ inputs.install_apps }}"
+              # PV_APPS is supplied by this step's env block (inputs.install_apps), hoisted out of this script on purpose: GitHub counts the WHOLE string toward the 21000-char expression limit when a string contains an expression, and this run block is larger than that limit on its own.
               APPS_DIR=""; APP_FIRST_PKG=""; APP_INSTALLED_LIST=""
               for cand in phonevault/apps apps; do if [ -f "$cand/apps.txt" ]; then APPS_DIR="$cand"; break; fi; done
               if [ "$PV_APPS" = "no" ]; then
