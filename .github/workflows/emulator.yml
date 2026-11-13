@@ -2593,6 +2593,7 @@ jobs:
               echo "android_id=$PV40_ID"; echo "marker_token=$PV40_TOKEN"; echo "marker_ok=$PV40_MOK"; echo "marker_guest_path=$PV40_MPATH"
               echo "phone=${PV_PHONE_ID:-one}"; echo "route=$PV40_ROUTE"; echo "identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)"
               echo "capsule_sha256=$PV40_CAPSHA"; echo "settings_secure_md5_birth=$PV40_MD5"
+              echo "datapersist_sentinel=${PV40_SENTINEL:-absent}"
               echo "largest_userdata_file=$LARGEST"; echo "largest_userdata_size_bytes=$LARGEST_SIZE"; echo "largest_userdata_sha256=$SHA"
               for f in $LIST; do printf 'packed_file: %s %s bytes\n' "$f" "$(stat -c %s "$AVDDIR/$f")"; done
               echo "packed_file: phonevault-version.txt (this file)"
@@ -2911,6 +2912,7 @@ jobs:
                     CMD5="$(sed -n 's/^settings_secure_md5_birth=//p' "$CERT" | tr -d '\r' | head -1)"
                     CBORN="$(sed -n 's/^born_utc=//p' "$CERT" | tr -d '\r' | head -1)"
                     CSES="$(sed -n 's/^session=//p' "$CERT" | tr -d '\r' | head -1)"
+                    CSENT="$(sed -n 's/^datapersist_sentinel=//p' "$CERT" | tr -d '\r' | head -1)"
                     CLF="$(sed -n 's/^largest_userdata_file=//p' "$CERT" | tr -d '\r' | head -1)"
                     CLS="$(sed -n 's/^largest_userdata_sha256=//p' "$CERT" | tr -d '\r' | head -1)"
                     case "$CSES" in ''|*[!0-9]*) CSES=1;; esac
@@ -2987,6 +2989,7 @@ jobs:
                                 echo "CMD5=$CMD5"
                                 echo "CBORN=$CBORN"
                                 echo "CSES=$CSES"
+                                echo "CSENT=$CSENT"
                                 echo "PRE_ID=$PRE_ID"
                                 echo "POST_ID=$POST_ID"
                                 echo "POST_MARKER=$POST_MARKER"
@@ -3325,6 +3328,7 @@ jobs:
               echo "android_id=$PV40_ID"; echo "marker_token=$PV40_TOKEN"; echo "marker_ok=$PV40_MOK"; echo "marker_guest_path=$PV40_MPATH"
               echo "phone=${PV_PHONE_ID:-one}"; echo "route=$PV40_ROUTE"; echo "identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)"
               echo "capsule_sha256=$PV40_CAPSHA"; echo "settings_secure_md5_birth=$PV40_MD5"
+              echo "datapersist_sentinel=${PV40_SENTINEL:-absent}"
               echo "largest_userdata_file=$LARGEST"; echo "largest_userdata_size_bytes=$LARGEST_SIZE"; echo "largest_userdata_sha256=$SHA"
               for f in $LIST; do printf 'packed_file: %s %s bytes\n' "$f" "$(stat -c %s "$AVDDIR/$f")"; done
               echo "packed_file: phonevault-version.txt (this file)"
@@ -3372,12 +3376,26 @@ jobs:
               CMD5="$(sed -n 's/^CMD5=//p' "$WSTATE" | tr -d '\r' | head -1)"
               CBORN="$(sed -n 's/^CBORN=//p' "$WSTATE" | tr -d '\r' | head -1)"
               CSES="$(sed -n 's/^CSES=//p' "$WSTATE" | tr -d '\r' | head -1)"
+              CSENT="$(sed -n 's/^CSENT=//p' "$WSTATE" | tr -d '\r' | head -1)"
               PRE_ID="$(sed -n 's/^PRE_ID=//p' "$WSTATE" | tr -d '\r' | head -1)"
               POST_ID="$(sed -n 's/^POST_ID=//p' "$WSTATE" | tr -d '\r' | head -1)"
               POST_MARKER="$(sed -n 's/^POST_MARKER=//p' "$WSTATE" | tr -d '\r' | head -1)"
               case "$CSES" in ''|*[!0-9]*) CSES=1;; esac
               if [ -z "$CMPATH" ]; then CMPATH="$MARKER_GUEST"; fi
               echo "wake handoff read: android_id=$CID marker_token=$CTOKEN marker_guest_path=$CMPATH capsule_sha256=$CCAPSHA session=$CSES born_utc=$CBORN control_pre_apply_id=$PRE_ID post_apply_id=$POST_ID"
+              echo "-- DATA-PERSIST SELF-TEST (v5.9): sentinel planted in the guest at a fixed /data path by the PREVIOUS run's pack phase; read BEFORE any app install in this verdict phase. YES = /data content crossed the wake; NO = /data was re-initialised (only the identity capsule carried); UNGRADED = the restored pack predates the sentinel writer --"
+              SENTFILE=/data/local/tmp/pv-datapersist-sentinel.txt
+              SENTRAW="$(adb -s emulator-5554 shell cat "$SENTFILE" 2>/dev/null | tr -d '\r')"
+              SENTSES="$(printf '%s' "$SENTRAW" | sed -n 's/.*session=\([0-9][0-9]*\).*/\1/p' | head -1)"
+              if [ "$CSENT" != "planted" ]; then
+                DP_LINE="DATA_PERSIST: UNGRADED (the restored session-$CSES pack carries no planted sentinel - it was sealed by a pre-v5.9 workflow or a birth; the sentinel planted by THIS run's pack phase is graded by the NEXT wake)"
+              elif [ -n "$SENTSES" ] && [ "$SENTSES" = "$CSES" ]; then
+                DP_LINE="DATA_PERSIST: YES (sentinel for session $CSES found at $SENTFILE - guest /data content survived the pack/restore cycle; raw: $SENTRAW)"
+              else
+                DP_LINE="DATA_PERSIST: NO (the restored session-$CSES pack planted a sentinel, but $SENTFILE is absent or stale on this boot - /data was re-initialised on this wake; only the identity capsule carried over; raw read: '${SENTRAW:-<missing/empty>}')"
+              fi
+              echo "$DP_LINE"
+              echo "$DP_LINE" >> "$WVERD"
               echo "-- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --"
               APPSTAT="$EVID/prod-app-status.txt"; : > "$APPSTAT"
               PV_APPS="${{ inputs.install_apps }}"
@@ -3447,6 +3465,14 @@ jobs:
                 if [ "$POST_MARKER" != "$CTOKEN" ]; then if [ -n "$W_FAIL" ]; then W_FAIL="$W_FAIL; "; fi; W_FAIL="${W_FAIL}marker not restored by the capsule tar (post-apply readback '${POST_MARKER:-<missing/empty>}')"; fi
                 if [ "$FINAL_ID" != "$CID" ]; then if [ -n "$W_FAIL" ]; then W_FAIL="$W_FAIL; "; fi; W_FAIL="${W_FAIL}applied android_id did NOT survive the extra reboot (after reboot2: $FINAL_ID)"; fi
                 if [ "$FINAL_MARKER" != "$CTOKEN" ]; then if [ -n "$W_FAIL" ]; then W_FAIL="$W_FAIL; "; fi; W_FAIL="${W_FAIL}marker did not survive the extra reboot (after reboot2: '${FINAL_MARKER:-<missing/empty>}')"; fi
+                if [ -z "$W_FAIL" ]; then
+                  echo "-- DATA-PERSIST SELF-TEST (v5.9): planting the sentinel the NEXT wake will grade (fixed /data path; written while the guest is still up, before the graceful stop, so it rides this run's re-pack) --"
+                  SENTNEXT=$((CSES + 1))
+                  adb -s emulator-5554 shell "echo 'pv-datapersist session=$SENTNEXT planted_utc=$(date -u +%FT%TZ) run_id=${GITHUB_RUN_ID:-unknown}' > /data/local/tmp/pv-datapersist-sentinel.txt" 2>&1; echo "sentinel_write_rc=$?"
+                  SENTBACK="$(adb -s emulator-5554 shell cat /data/local/tmp/pv-datapersist-sentinel.txt 2>/dev/null | tr -d '\r')"
+                  echo "sentinel readback: '$SENTBACK'"
+                  case "$SENTBACK" in *"session=$SENTNEXT"*) PV40_SENTINEL=planted; echo "sentinel planted for session $SENTNEXT (the outgoing pack's certificate will carry datapersist_sentinel=planted)";; *) echo "sentinel plant UNVERIFIED - the outgoing certificate will carry datapersist_sentinel=absent and the next wake will grade UNGRADED, not NO";; esac
+                fi
                 rt4_stop
                 if [ -n "$W_FAIL" ]; then
                   echo "WAKE: FAILED - $W_FAIL (certificate $CID, control-pre-apply $PRE_ID, post-apply $POST_ID, after-reboot2 $FINAL_ID; NO re-pack - the pinned pack stays the newest good state)"
@@ -3675,4 +3701,12 @@ jobs:
           git config user.email "probe@localhost"
           git add "$OUT"
           git commit -m "emulator output [skip ci]" || exit 0
-          git push
+          # v5.9 commit-back fix: this checkout was taken at dispatch; a long run's main can
+          # move underneath it (run #64 sealed vault session 6 correctly, then lost this very
+          # output commit to a stale-checkout push rejection). Sync to the remote tip and
+          # rebase the single output-file commit on top before pushing; one fetch+rebase
+          # retry; a still-failing push degrades to a loud line instead of failing the run,
+          # because the vault + artifact copies of this output are the record that matters.
+          git fetch origin main || true
+          git rebase origin/main || { git rebase --abort || true; git fetch origin main || true; git reset --soft origin/main || true; git commit -m "emulator output [skip ci]" || true; }
+          git push || { git fetch origin main && git rebase origin/main && git push; } || echo "commit-back: push STILL rejected after rebase - output commit skipped this run (vault + artifact copies unaffected)"
