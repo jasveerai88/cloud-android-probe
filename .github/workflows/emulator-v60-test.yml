@@ -333,10 +333,70 @@ jobs:
           if [ ! -s "$RD" ]; then echo "POSTURE: NOT APPLIED - ramdisk.img missing at $RD"; exit 1; fi
           RDMAGIC="$(od -An -tx1 -N4 "$RD" 2>/dev/null | tr -d ' \n')"
           RDTMP="$(mktemp -d)"; RDFMT=""
+          # v60-r3 LZ4-LEGACY tooling: the android-34 google_apis ramdisk ships
+          # as an LZ4 legacy frame (magic 02214c18 = 0x184C2102), which the
+          # format table below did not know (live run No.3 aborted on it, by
+          # design). Backends, tried in order: (1) the lz4 CLI - preinstalled
+          # on GitHub ubuntu-24.04 runners (the actions/runner-images
+          # Ubuntu2404 manifest lists lz4 1.9.4); it decodes legacy frames by
+          # magic and writes them with -l. (2) a bounded apt attempt to
+          # restore the CLI if a future image drops it. (3) an embedded
+          # python3 codec - legacy framing done here over the lz4 module's
+          # raw block codec - after a bounded pip attempt if the module is
+          # missing. If no backend can be obtained, the lz4legacy branch
+          # fails closed like every other unhandled format.
+          PV60_LZ4LEG=""; PV60_LZ4PY="$RDTMP/pv60_lz4legacy.py"
+          pv60_lz4leg_setup() {
+            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli ($(lz4 --version 2>/dev/null | head -1))"; return 0; fi
+            if sudo -n true 2>/dev/null; then sudo -n apt-get update -qq >/dev/null 2>&1; sudo -n apt-get install -y -qq lz4 >/dev/null 2>&1; fi
+            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli (apt-restored)"; return 0; fi
+            cat > "$PV60_LZ4PY" <<'PV60PYEOF'
+          import struct, sys
+          import lz4.block
+          MAGIC = b"\x02\x21\x4c\x18"
+          MAXBLK = 8 * 1024 * 1024
+          def dec(data):
+              if data[:4] != MAGIC:
+                  raise SystemExit("pv60 lz4legacy: bad magic")
+              out = bytearray(); pos = 4
+              while True:
+                  if pos + 4 > len(data):
+                      raise SystemExit("pv60 lz4legacy: truncated block header")
+                  (size,) = struct.unpack_from("<I", data, pos); pos += 4
+                  if size == 0:
+                      return bytes(out)
+                  raw = bool(size & 0x80000000); n = size & 0x7FFFFFFF
+                  payload = data[pos:pos + n]
+                  if len(payload) != n:
+                      raise SystemExit("pv60 lz4legacy: truncated block payload")
+                  pos += n
+                  out += payload if raw else lz4.block.decompress(payload, uncompressed_size=MAXBLK)
+          def enc(data):
+              out = bytearray(MAGIC)
+              for off in range(0, len(data), MAXBLK):
+                  chunk = data[off:off + MAXBLK]
+                  comp = lz4.block.compress(chunk, store_size=False)
+                  if len(comp) >= len(chunk):
+                      out += struct.pack("<I", len(chunk) | 0x80000000); out += chunk
+                  else:
+                      out += struct.pack("<I", len(comp)); out += comp
+              out += b"\x00\x00\x00\x00"
+              return bytes(out)
+          _data = sys.stdin.buffer.read()
+          sys.stdout.buffer.write(dec(_data) if sys.argv[1] == "dec" else enc(_data))
+          PV60PYEOF
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then PV60_LZ4LEG=py; echo "posture: lz4-legacy backend=py (embedded legacy codec over the python3 lz4 module)"; return 0; fi
+            python3 -m pip install --user --break-system-packages --quiet lz4 >/dev/null 2>&1
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then PV60_LZ4LEG=py; echo "posture: lz4-legacy backend=py (pip-restored lz4 module)"; return 0; fi
+            return 1
+          }
+          pv60_lz4leg_dec() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -dc; else python3 "$PV60_LZ4PY" dec; fi; }
+          pv60_lz4leg_enc() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -l -f -c; else python3 "$PV60_LZ4PY" enc; fi; }
           case "$RDMAGIC" in
             1f8b*) RDFMT=gzip; gzip -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk gzip extract failed" ;;
             04224c41) RDFMT=lz4frame; if command -v lz4 >/dev/null 2>&1; then lz4 -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk lz4 extract failed"; else PV60_FAIL="ramdisk is lz4-frame but no lz4 tool exists on the runner"; fi ;;
             30373037) RDFMT=cpio; cp "$RD" "$RDTMP/rd.cpio" ;;
+            02214c18) RDFMT=lz4legacy; if pv60_lz4leg_setup; then pv60_lz4leg_dec < "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk lz4-legacy extract failed"; else PV60_FAIL="ramdisk is LZ4-legacy but no lz4 tooling could be obtained on the runner (no lz4 CLI, apt restore failed, no python3 lz4 module)"; fi ;;
             *) PV60_FAIL="ramdisk.img format unrecognised (magic $RDMAGIC) - refusing to guess" ;;
           esac
           if [ -z "$PV60_FAIL" ]; then
@@ -358,6 +418,7 @@ jobs:
               gzip) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet | gzip -9 > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
               lz4frame) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet | lz4 -f -9 -c > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
               cpio) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
+              lz4legacy) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet | pv60_lz4leg_enc > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
             esac
           fi
           if [ -z "$PV60_FAIL" ] && [ "$RD_FOUND" = "1" ]; then
@@ -367,10 +428,16 @@ jobs:
               gzip) gzip -dc "$RD" 2>/dev/null | ( cd "$RDTMP/verify" && cpio -idm --quiet ) && VOK=1 ;;
               lz4frame) lz4 -dc "$RD" 2>/dev/null | ( cd "$RDTMP/verify" && cpio -idm --quiet ) && VOK=1 ;;
               cpio) ( cd "$RDTMP/verify" && cpio -idm --quiet < "$RD" ) && VOK=1 ;;
+              lz4legacy) pv60_lz4leg_dec < "$RD" 2>/dev/null | ( cd "$RDTMP/verify" && cpio -idm --quiet ) && VOK=1 ;;
             esac
             VLINE="$(find "$RDTMP/verify" -name 'fstab.*' -type f -exec cat {} + 2>/dev/null | awk '$2=="/data"')"
             echo "posture: ramdisk repack verify: extract_ok=$VOK /data line now: $VLINE"
-            if [ "$VOK" != "1" ] || printf '%s' "$VLINE" | grep -Eq 'fileencryption=|metadata_encryption='; then PV60_FAIL="ramdisk repack verification failed"; cp "$RDTMP/ramdisk.orig.bak" "$RD"; fi
+            RDDATA="$(find "$RDTMP/root" -name 'fstab.*' -type f -exec cat {} + 2>/dev/null | awk '$2=="/data"')"
+            VFAIL=""
+            if [ "$VOK" != "1" ]; then VFAIL="re-extract of the repacked ramdisk failed"; fi
+            if [ -n "$RDDATA" ] && [ -z "$VLINE" ]; then VFAIL="the patched /data line is missing from the repacked ramdisk"; fi
+            if printf '%s' "$VLINE" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then VFAIL="FBE flags survive in the repacked ramdisk"; fi
+            if [ -n "$VFAIL" ]; then PV60_FAIL="ramdisk repack verification failed ($VFAIL)"; cp "$RDTMP/ramdisk.orig.bak" "$RD"; fi
           fi
           VI="$PV60_SYSROOT/vendor.img"
           if [ -z "$PV60_FAIL" ] && [ -s "$VI" ]; then
