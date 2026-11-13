@@ -95,7 +95,7 @@ jobs:
           if [ "$PHONE" = "verify" ]; then
             PV_ART_NAME=phonevaultverify-avd-state; PV_OUT_FILE=emulator-output-verify.txt; PV_LP_BRANCH=phonevaultverify-live; PV_LP_FILE=live-now-verify.txt; PV_VAULT_REPO=jasveerai92/phonevault-verify
           elif [ "$PHONE" = "two" ]; then
-            PV_ART_NAME=phonevault2-avd-state; PV_OUT_FILE=emulator-output-2.txt; PV_LP_BRANCH=phonevault2-live; PV_LP_FILE=live-now-2.txt; PV_VAULT_REPO=jasveerai88/phonevault-two
+            PV_ART_NAME=phonevault2-avd-state; PV_OUT_FILE=emulator-output-2.txt; PV_LP_BRANCH=phonevault2-live; PV_LP_FILE=live-now-2.txt; PV_VAULT_REPO=jasveerai92/phonevault-two
           else
             PV_ART_NAME=phonevault-avd-state; PV_OUT_FILE=emulator-output.txt; PV_LP_BRANCH=phonevault-live; PV_LP_FILE=live-now.txt; PV_VAULT_REPO=jasveerai88/phonevault
           fi
