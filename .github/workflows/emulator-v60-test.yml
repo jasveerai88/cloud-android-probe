@@ -392,6 +392,180 @@ jobs:
           }
           pv60_lz4leg_dec() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -dc; else python3 "$PV60_LZ4PY" dec; fi; }
           pv60_lz4leg_enc() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -l -f -c; else python3 "$PV60_LZ4PY" enc; fi; }
+          # v60-r4 NEWC tooling: live run No.4 got one layer deeper - the
+          # LZ4-legacy decode worked, then GNU cpio died extracting the
+          # ramdisk: "cpio: dev/null: Cannot mknod: Operation not
+          # permitted" (dev/console, dev/urandom likewise) - device
+          # nodes cannot be created by the unprivileged runner user.
+          # So the ramdisk archive path no longer uses the cpio binary
+          # at all: the embedded python3 newc implementation below
+          # parses every entry, writes only regular files, directories
+          # and symlinks to the work tree, and carries device nodes,
+          # fifos and sockets purely as archive RECORDS (every header
+          # field, in a JSON manifest beside the tree) that the repack
+          # re-emits verbatim - no host mknod, no cpio binary, nothing
+          # dropped. Hardlinked regular files keep the newc convention
+          # end to end: the archive holds the data on the LAST group
+          # member; extract writes that data to every member; repack
+          # re-emits it on the last member only. All metadata (mode,
+          # uid, gid, nlink, mtime, dev and rdev numbers) round-trips
+          # from the manifest, so the only bytes that can change in
+          # the whole archive are the patched fstab's.
+          PV60_CPIOPY="$RDTMP/pv60_newc.py"
+          pv60_newc_setup() {
+            cat > "$PV60_CPIOPY" <<'PV60CPIEOF'
+          import json, os, stat, sys
+          HDR = 110
+          def pad4(n):
+              return (4 - n % 4) % 4
+          def die(msg):
+              raise SystemExit("pv60 newc: " + msg)
+          def kind(mode):
+              t = stat.S_IFMT(mode)
+              for bits, name in ((stat.S_IFREG, "reg"), (stat.S_IFDIR, "dir"), (stat.S_IFLNK, "lnk"), (stat.S_IFCHR, "chr"), (stat.S_IFBLK, "blk"), (stat.S_IFIFO, "fifo"), (stat.S_IFSOCK, "sock")):
+                  if t == bits:
+                      return name
+              return "other"
+          def parse(data):
+              recs = []
+              pos = 0
+              while pos + HDR <= len(data):
+                  if data[pos:pos + 6] != b"070701":
+                      die("bad magic at offset %d" % pos)
+                  try:
+                      f = [int(data[pos + 6 + i * 8:pos + 14 + i * 8], 16) for i in range(13)]
+                  except ValueError:
+                      die("unparseable header at offset %d" % pos)
+                  namesize, filesize = f[11], f[6]
+                  if namesize < 1 or pos + HDR + namesize > len(data):
+                      die("truncated name at offset %d" % pos)
+                  name = data[pos + HDR:pos + HDR + namesize].split(b"\0")[0].decode("utf-8", "surrogateescape")
+                  pos += HDR + namesize + pad4(HDR + namesize)
+                  if pos + filesize > len(data):
+                      die("truncated payload for %r" % name)
+                  payload = data[pos:pos + filesize]
+                  pos += filesize + pad4(filesize)
+                  if name == "TRAILER!!!":
+                      return recs
+                  recs.append({"name": name, "ino": f[0], "mode": f[1], "uid": f[2], "gid": f[3], "nlink": f[4], "mtime": f[5], "devmajor": f[7], "devminor": f[8], "rmajor": f[9], "rminor": f[10], "check": f[12], "payload": payload})
+              die("archive ended without TRAILER!!!")
+          def relpath(name):
+              if name.startswith("/"):
+                  die("absolute entry name refused: %r" % name)
+              n = name
+              while n.startswith("./"):
+                  n = n[2:]
+              if n in ("", "."):
+                  return ""
+              if any(p == ".." for p in n.split("/")):
+                  die("entry name escapes the work tree: %r" % name)
+              return n
+          def groups_of(recs):
+              groups = {}
+              for idx, r in enumerate(recs):
+                  if kind(r["mode"]) == "reg" and r["nlink"] > 1:
+                      groups.setdefault((r["ino"], r["devmajor"], r["devminor"]), []).append(idx)
+              return {k: v for k, v in groups.items() if len(v) > 1}
+          def do_extract(tree, manifest_path):
+              recs = parse(sys.stdin.buffer.read())
+              member = {}
+              for idxs in groups_of(recs).values():
+                  payload = b""
+                  for i in idxs:
+                      if recs[i]["payload"]:
+                          payload = recs[i]["payload"]
+                  for i in idxs:
+                      member[i] = payload
+              os.makedirs(tree, exist_ok=True)
+              dir_fixups = []
+              manifest = []
+              for idx, r in enumerate(recs):
+                  k = kind(r["mode"])
+                  rel = relpath(r["name"])
+                  special = k in ("chr", "blk", "fifo", "sock")
+                  if special and r["payload"]:
+                      die("special entry %r carries a payload - refusing" % r["name"])
+                  if k == "other":
+                      die("unsupported entry type (mode %o) in %r" % (r["mode"], r["name"]))
+                  manifest.append({"name": r["name"], "rel": rel, "kind": k, "ino": r["ino"], "mode": r["mode"], "uid": r["uid"], "gid": r["gid"], "nlink": r["nlink"], "mtime": r["mtime"], "devmajor": r["devmajor"], "devminor": r["devminor"], "rmajor": r["rmajor"], "rminor": r["rminor"], "check": r["check"], "group": idx in member})
+                  if rel == "" or special:
+                      continue
+                  path = os.path.join(tree, rel)
+                  parent = os.path.dirname(path)
+                  if parent:
+                      os.makedirs(parent, exist_ok=True)
+                  if k == "dir":
+                      os.makedirs(path, exist_ok=True)
+                      dir_fixups.append((path, r))
+                  elif k == "lnk":
+                      if os.path.lexists(path):
+                          os.unlink(path)
+                      os.symlink(r["payload"].decode("utf-8", "surrogateescape"), path)
+                      os.utime(path, (r["mtime"], r["mtime"]), follow_symlinks=False)
+                  else:
+                      with open(path, "wb") as fh:
+                          fh.write(member.get(idx, r["payload"]))
+                      os.chmod(path, r["mode"] & 0o7777)
+                      os.utime(path, (r["mtime"], r["mtime"]))
+              for path, r in dir_fixups:
+                  os.chmod(path, r["mode"] & 0o7777)
+                  os.utime(path, (r["mtime"], r["mtime"]))
+              with open(manifest_path, "w") as fh:
+                  json.dump(manifest, fh)
+          def emit(out, name, ino, mode, uid, gid, nlink, mtime, data, devmajor, devminor, rmajor, rminor, check):
+              nameb = name.encode("utf-8", "surrogateescape") + b"\0"
+              fields = [ino, mode, uid, gid, nlink, mtime, len(data), devmajor, devminor, rmajor, rminor, len(nameb), check]
+              out += ("070701" + "".join("%08x" % (v & 0xFFFFFFFF) for v in fields)).encode()
+              out += nameb
+              out += b"\0" * pad4(HDR + len(nameb))
+              out += data
+              out += b"\0" * pad4(len(data))
+          def do_repack(tree, manifest_path):
+              with open(manifest_path) as fh:
+                  manifest = json.load(fh)
+              groups = {}
+              for idx, m in enumerate(manifest):
+                  if m["kind"] == "reg" and m["group"]:
+                      groups.setdefault((m["ino"], m["devmajor"], m["devminor"]), []).append(idx)
+              lasts = set()
+              for idxs in groups.values():
+                  if len(idxs) > 1:
+                      lasts.add(idxs[-1])
+              out = bytearray()
+              for idx, m in enumerate(manifest):
+                  k = m["kind"]
+                  if k in ("chr", "blk", "fifo", "sock", "dir"):
+                      data = b""
+                  elif k == "lnk":
+                      path = os.path.join(tree, m["rel"])
+                      if not os.path.islink(path):
+                          die("symlink missing from the work tree: %r" % m["name"])
+                      data = os.readlink(path).encode("utf-8", "surrogateescape")
+                  elif k == "reg":
+                      if m["group"] and idx not in lasts:
+                          data = b""
+                      else:
+                          path = os.path.join(tree, m["rel"])
+                          if os.path.islink(path) or not os.path.isfile(path):
+                              die("file missing from the work tree: %r" % m["name"])
+                          with open(path, "rb") as fh:
+                              data = fh.read()
+                  else:
+                      die("unsupported entry type in manifest: %r" % m["name"])
+                  emit(out, m["name"], m["ino"], m["mode"], m["uid"], m["gid"], m["nlink"], m["mtime"], data, m["devmajor"], m["devminor"], m["rmajor"], m["rminor"], m["check"])
+              emit(out, "TRAILER!!!", 0, 0, 0, 0, 1, 0, b"", 0, 0, 0, 0, 0)
+              out += b"\0" * ((512 - len(out) % 512) % 512)
+              sys.stdout.buffer.write(bytes(out))
+          if len(sys.argv) != 4 or sys.argv[1] not in ("extract", "repack"):
+              raise SystemExit("usage: pv60_newc.py extract|repack <tree> <manifest>")
+          if sys.argv[1] == "extract":
+              do_extract(sys.argv[2], sys.argv[3])
+          else:
+              do_repack(sys.argv[2], sys.argv[3])
+          PV60CPIEOF
+          }
+          pv60_newc_extract() { pv60_newc_setup && python3 "$PV60_CPIOPY" extract "$1" "$2"; }
+          pv60_newc_repack() { pv60_newc_setup && python3 "$PV60_CPIOPY" repack "$RDTMP/root" "$RDTMP/root.records.json"; }
           case "$RDMAGIC" in
             1f8b*) RDFMT=gzip; gzip -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk gzip extract failed" ;;
             04224c41) RDFMT=lz4frame; if command -v lz4 >/dev/null 2>&1; then lz4 -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk lz4 extract failed"; else PV60_FAIL="ramdisk is lz4-frame but no lz4 tool exists on the runner"; fi ;;
@@ -400,7 +574,8 @@ jobs:
             *) PV60_FAIL="ramdisk.img format unrecognised (magic $RDMAGIC) - refusing to guess" ;;
           esac
           if [ -z "$PV60_FAIL" ]; then
-            mkdir -p "$RDTMP/root"; ( cd "$RDTMP/root" && cpio -idm --quiet < "$RDTMP/rd.cpio" ) || PV60_FAIL="ramdisk cpio extract failed"
+            mkdir -p "$RDTMP/root"
+            pv60_newc_extract "$RDTMP/root" "$RDTMP/root.records.json" < "$RDTMP/rd.cpio" || PV60_FAIL="ramdisk cpio extract failed"
           fi
           RD_FOUND=0
           if [ -z "$PV60_FAIL" ]; then
@@ -415,20 +590,20 @@ jobs:
           fi
           if [ -z "$PV60_FAIL" ] && [ "$RD_FOUND" = "1" ]; then
             case "$RDFMT" in
-              gzip) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet | gzip -9 > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
-              lz4frame) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet | lz4 -f -9 -c > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
-              cpio) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
-              lz4legacy) ( cd "$RDTMP/root" && find . | cpio -o -H newc --quiet | pv60_lz4leg_enc > "$RDTMP/ramdisk.new" ) || PV60_FAIL="ramdisk repack failed" ;;
+              gzip) pv60_newc_repack | gzip -9 > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
+              lz4frame) pv60_newc_repack | lz4 -f -9 -c > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
+              cpio) pv60_newc_repack > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
+              lz4legacy) pv60_newc_repack | pv60_lz4leg_enc > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
             esac
           fi
           if [ -z "$PV60_FAIL" ] && [ "$RD_FOUND" = "1" ]; then
             cp "$RD" "$RDTMP/ramdisk.orig.bak"; mv "$RDTMP/ramdisk.new" "$RD"
             mkdir -p "$RDTMP/verify"; VOK=0
             case "$RDFMT" in
-              gzip) gzip -dc "$RD" 2>/dev/null | ( cd "$RDTMP/verify" && cpio -idm --quiet ) && VOK=1 ;;
-              lz4frame) lz4 -dc "$RD" 2>/dev/null | ( cd "$RDTMP/verify" && cpio -idm --quiet ) && VOK=1 ;;
-              cpio) ( cd "$RDTMP/verify" && cpio -idm --quiet < "$RD" ) && VOK=1 ;;
-              lz4legacy) pv60_lz4leg_dec < "$RD" 2>/dev/null | ( cd "$RDTMP/verify" && cpio -idm --quiet ) && VOK=1 ;;
+              gzip) gzip -dc "$RD" 2>/dev/null | pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" && VOK=1 ;;
+              lz4frame) lz4 -dc "$RD" 2>/dev/null | pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" && VOK=1 ;;
+              cpio) pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" < "$RD" && VOK=1 ;;
+              lz4legacy) pv60_lz4leg_dec < "$RD" 2>/dev/null | pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" && VOK=1 ;;
             esac
             VLINE="$(find "$RDTMP/verify" -name 'fstab.*' -type f -exec cat {} + 2>/dev/null | awk '$2=="/data"')"
             echo "posture: ramdisk repack verify: extract_ok=$VOK /data line now: $VLINE"
