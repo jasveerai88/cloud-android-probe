@@ -317,17 +317,37 @@ jobs:
             sed -E -e '/^[[:space:]]*[^[:space:]]+[[:space:]]+\/data[[:space:]]/ { s/,fileencryption=[^, ]*//g; s/fileencryption=[^, ]*,//g; s/,metadata_encryption=[^, ]*//g; s/metadata_encryption=[^, ]*,//g; s/,keydirectory=[^, ]*//g; s/keydirectory=[^, ]*,//g; s/,inlinecrypt//g; s/inlinecrypt,//g; s/,,+/,/g }'
           }
           pv60_patch_file() {
-            local F="$1" BEFORE AFTER
+            # $1 = host file to patch in place; $2 = display label (default $1).
+            # Sets PV60_PF: nodata (no /data line - not governing) | clean
+            # (governing, already flag-free) | patched (governing, flags stripped).
+            local F="$1" DISP="${2:-$1}" BEFORE AFTER
+            PV60_PF=nodata
             BEFORE="$(awk '$2=="/data"' "$F" 2>/dev/null)"
-            if [ -z "$BEFORE" ]; then echo "posture: $F - no /data line, not a governing fstab (skipped)"; return 0; fi
-            echo "posture: $F /data BEFORE: $BEFORE"
-            if ! printf '%s' "$BEFORE" | grep -Eq 'fileencryption=|metadata_encryption='; then echo "posture: $F - /data line carries no FBE flags (already unencrypted posture)"; return 0; fi
-            pv60_strip < "$F" > "$F.pv60tmp" || { echo "posture: $F - strip FAILED"; return 1; }
+            if [ -z "$BEFORE" ]; then echo "posture: $DISP - no /data line, not a governing fstab (skipped)"; return 0; fi
+            echo "posture: $DISP /data BEFORE: $BEFORE"
+            if ! printf '%s' "$BEFORE" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then echo "posture: $DISP - /data line carries no FBE flags (already unencrypted posture)"; PV60_PF=clean; return 0; fi
+            pv60_strip < "$F" > "$F.pv60tmp" || { echo "posture: $DISP - strip FAILED"; return 1; }
             AFTER="$(awk '$2=="/data"' "$F.pv60tmp")"
-            echo "posture: $F /data AFTER:  $AFTER"
-            if printf '%s' "$AFTER" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then echo "posture: $F - FBE flags survive the strip - FAILED"; rm -f "$F.pv60tmp"; return 1; fi
-            case "$AFTER" in *wait*) : ;; *) echo "posture: $F - /data line lost its wait flag - FAILED"; rm -f "$F.pv60tmp"; return 1 ;; esac
-            mv "$F.pv60tmp" "$F"; echo "posture: $F PATCHED"; return 0
+            echo "posture: $DISP /data AFTER:  $AFTER"
+            if printf '%s' "$AFTER" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then echo "posture: $DISP - FBE flags survive the strip - FAILED"; rm -f "$F.pv60tmp"; return 1; fi
+            case "$AFTER" in *wait*) : ;; *) echo "posture: $DISP - /data line lost its wait flag - FAILED"; rm -f "$F.pv60tmp"; return 1 ;; esac
+            mv "$F.pv60tmp" "$F"; PV60_PF=patched; echo "posture: $DISP PATCHED"; return 0
+          }
+          # v60-r5 governing-copy accounting: the r4 phase could print POSTURE:
+          # APPLIED over an EMPTY set of patched copies (live runs No.5/No.6:
+          # no fstab in the ramdisk, none at vendor /etc - APPLIED was vacuous
+          # and run A still read ro.crypto.state=encrypted). From r5 on, every
+          # governing copy (an fstab.* file whose content carries a /data line)
+          # is counted with its component:path label, and the verdict at the
+          # end of the phase is computed from these counters - zero governing
+          # copies found anywhere is a hard NOT APPLIED, never an APPLIED.
+          PV60_GOV_FOUND=0; PV60_GOV_PATCHED=0; PV60_GOV_CLEAN=0; PV60_GOV_PATHS=""; PV60_PATCHED_PATHS=""
+          pv60_count() {
+            # $1 = component:path label of the copy pv60_patch_file just ran on
+            case "$PV60_PF" in
+              patched) PV60_GOV_FOUND=$((PV60_GOV_FOUND+1)); PV60_GOV_PATCHED=$((PV60_GOV_PATCHED+1)); PV60_GOV_PATHS="${PV60_GOV_PATHS:+$PV60_GOV_PATHS, }$1"; PV60_PATCHED_PATHS="${PV60_PATCHED_PATHS:+$PV60_PATCHED_PATHS, }$1" ;;
+              clean) PV60_GOV_FOUND=$((PV60_GOV_FOUND+1)); PV60_GOV_CLEAN=$((PV60_GOV_CLEAN+1)); PV60_GOV_PATHS="${PV60_GOV_PATHS:+$PV60_GOV_PATHS, }$1" ;;
+            esac
           }
           RD="$PV60_SYSROOT/ramdisk.img"
           if [ ! -s "$RD" ]; then echo "POSTURE: NOT APPLIED - ramdisk.img missing at $RD"; exit 1; fi
@@ -566,6 +586,179 @@ jobs:
           }
           pv60_newc_extract() { pv60_newc_setup && python3 "$PV60_CPIOPY" extract "$1" "$2"; }
           pv60_newc_repack() { pv60_newc_setup && python3 "$PV60_CPIOPY" repack "$RDTMP/root" "$RDTMP/root.records.json"; }
+            PV60_RD_DONE=""
+            if [ "$RDMAGIC" = 02214c18 ] && [ -z "$PV60_FAIL" ]; then
+              # v60-r5 MULTI-FRAME ramdisk handling. Desk inspection of the
+              # genuine image (x86_64-34_r14.zip, sha1 verified) proved
+              # ramdisk.img is TWO concatenated LZ4 legacy frames: frame 0 is
+              # the generic ramdisk (16 entries, no fstab - the r4 live
+              # observation was true of frame 0 only) and frame 1 is the
+              # first-stage ramdisk carrying first_stage_ramdisk/fstab.ranchu
+              # WITH the flagged /data line. Google's encoder writes the
+              # frames back to back with NO zero end-mark between them (the
+              # next frame's magic is the boundary - the rule the lz4 CLI's
+              # legacy reader applies), so a reader that walks blocks to the
+              # end-mark, or an extractor that stops at the first cpio
+              # TRAILER, silently drops frame 1 and its governing copy.
+              # Split the frames structurally (boundary = end-mark, next
+              # magic, or EOF), run the usual decode/extract/patch/repack per
+              # frame, and re-concatenate preserving each frame's original
+              # end-mark style.
+              PV60_RD_DONE=1
+              if pv60_lz4leg_setup; then :; else PV60_FAIL="ramdisk lz4-legacy tooling unavailable for the multi-frame flow"; fi
+              FRD="$RDTMP/frames"; mkdir -p "$FRD/raw"
+              if [ -z "$PV60_FAIL" ]; then
+                NFR="$(python3 - "$RD" "$FRD/raw" <<'PV60SPLITEOF'
+          import os, struct, sys
+          data = open(sys.argv[1], 'rb').read()
+          MAGIC = b'\x02\x21\x4c\x18'
+          if data[:4] != MAGIC:
+              raise SystemExit('not an lz4 legacy stream')
+          pos = 0
+          count = 0
+          while pos < len(data):
+              if data[pos:pos + 4] != MAGIC:
+                  raise SystemExit('lz4 frame %d: bad magic at %d' % (count, pos))
+              start = pos
+              pos += 4
+              had_term = 0
+              while pos < len(data):
+                  (size,) = struct.unpack_from('<I', data, pos)
+                  if size == 0:
+                      had_term = 1
+                      pos += 4
+                      break
+                  if data[pos:pos + 4] == MAGIC:
+                      break
+                  pos += 4 + (size & 0x7FFFFFFF)
+              orig = data[start:pos]
+              with open(os.path.join(sys.argv[2], 'frame%d.orig' % count), 'wb') as f:
+                  f.write(orig)
+              with open(os.path.join(sys.argv[2], 'frame%d.lz4' % count), 'wb') as f:
+                  f.write(orig if had_term else orig + b'\x00\x00\x00\x00')
+              with open(os.path.join(sys.argv[2], 'frame%d.term' % count), 'w') as f:
+                  f.write('1' if had_term else '0')
+              count += 1
+          print(count)
+          PV60SPLITEOF
+          )" || PV60_FAIL="ramdisk lz4 frame split failed"
+              fi
+              echo "posture: ramdisk.img lz4-legacy frames: ${NFR:-0}"
+              FR_ANY=0; FR_CAND=0
+              if [ -z "$PV60_FAIL" ]; then
+                FI=0
+                while [ "$FI" -lt "${NFR:-0}" ]; do
+                  FRC="$FRD/frame$FI.cpio"; FRR="$FRD/root$FI"; mkdir -p "$FRR"
+                  if ! pv60_lz4leg_dec < "$FRD/raw/frame$FI.lz4" > "$FRC" 2>/dev/null; then PV60_FAIL="ramdisk frame $FI decode failed"; break; fi
+                  if ! pv60_newc_extract "$FRR" "$FRD/root$FI.records.json" < "$FRC"; then PV60_FAIL="ramdisk frame $FI cpio extract failed"; break; fi
+                  echo "posture: ramdisk.img frame $FI top-level listing (names only):"
+                  ls -A "$FRR" 2>/dev/null | while IFS= read -r PV60_N; do echo "posture:   ramdisk frame $FI top: $PV60_N"; done
+                  echo "posture: ramdisk.img frame $FI holds $(find "$FRR" -type f 2>/dev/null | wc -l) regular files in total"
+                  find "$FRR" -type f -name 'fstab.*' 2>/dev/null | sort > "$FRD/cand$FI.txt"
+                  if [ -s "$FRD/cand$FI.txt" ]; then echo 1 > "$FRD/hascand$FI"; FR_ANY=1; fi
+                  while IFS= read -r FF; do
+                    if [ -z "$FF" ]; then continue; fi
+                    FR_CAND=$((FR_CAND+1))
+                    REL="${FF#$FRR/}"
+                    echo "posture: candidate ramdisk[frame$FI]:$REL"
+                    pv60_patch_file "$FF" "ramdisk[frame$FI]:$REL" || { PV60_FAIL="ramdisk frame $FI fstab patch failed"; break; }
+                    pv60_count "ramdisk[frame$FI]:$REL"
+                  done < "$FRD/cand$FI.txt"
+                  if [ -n "$PV60_FAIL" ]; then break; fi
+                  FI=$((FI+1))
+                done
+              fi
+              if [ -z "$PV60_FAIL" ] && [ "$FR_ANY" = 1 ]; then
+                # repack ONLY the frames that carried a candidate; untouched
+                # frames are re-emitted from their ORIGINAL byte range, and a
+                # repacked frame keeps the original's end-mark style.
+                : > "$FRD/joined.lz4"
+                FI=0
+                while [ "$FI" -lt "${NFR:-0}" ]; do
+                  if [ -f "$FRD/hascand$FI" ]; then
+                    pv60_newc_setup
+                    if ! python3 "$PV60_CPIOPY" repack "$FRD/root$FI" "$FRD/root$FI.records.json" > "$FRD/new$FI.cpio"; then PV60_FAIL="ramdisk frame $FI repack failed"; break; fi
+                    if ! pv60_lz4leg_enc < "$FRD/new$FI.cpio" > "$FRD/new$FI.lz4"; then PV60_FAIL="ramdisk frame $FI re-encode failed"; break; fi
+                    if [ "$(cat "$FRD/raw/frame$FI.term")" = "0" ]; then
+                      if [ "$(tail -c 4 "$FRD/new$FI.lz4" | od -An -tx1 | tr -d ' \n')" = "00000000" ]; then
+                        truncate -s -4 "$FRD/new$FI.lz4"
+                      else
+                        PV60_FAIL="ramdisk frame $FI re-encode lacks the expected end-mark"; break
+                      fi
+                    fi
+                    cat "$FRD/new$FI.lz4" >> "$FRD/joined.lz4"
+                  else
+                    cat "$FRD/raw/frame$FI.orig" >> "$FRD/joined.lz4"
+                  fi
+                  FI=$((FI+1))
+                done
+              fi
+              if [ -z "$PV60_FAIL" ] && [ "$FR_ANY" = 1 ]; then
+                # round-trip verify the JOINED image: split again, decode and
+                # extract every frame, candidate parity with what was patched,
+                # and no FBE flags left on any fstab /data line anywhere.
+                VFD="$RDTMP/vframes"; mkdir -p "$VFD/raw"
+                NVF="$(python3 - "$FRD/joined.lz4" "$VFD/raw" <<'PV60SPLITEOF'
+          import os, struct, sys
+          data = open(sys.argv[1], 'rb').read()
+          MAGIC = b'\x02\x21\x4c\x18'
+          if data[:4] != MAGIC:
+              raise SystemExit('not an lz4 legacy stream')
+          pos = 0
+          count = 0
+          while pos < len(data):
+              if data[pos:pos + 4] != MAGIC:
+                  raise SystemExit('lz4 frame %d: bad magic at %d' % (count, pos))
+              start = pos
+              pos += 4
+              had_term = 0
+              while pos < len(data):
+                  (size,) = struct.unpack_from('<I', data, pos)
+                  if size == 0:
+                      had_term = 1
+                      pos += 4
+                      break
+                  if data[pos:pos + 4] == MAGIC:
+                      break
+                  pos += 4 + (size & 0x7FFFFFFF)
+              orig = data[start:pos]
+              with open(os.path.join(sys.argv[2], 'frame%d.orig' % count), 'wb') as f:
+                  f.write(orig)
+              with open(os.path.join(sys.argv[2], 'frame%d.lz4' % count), 'wb') as f:
+                  f.write(orig if had_term else orig + b'\x00\x00\x00\x00')
+              with open(os.path.join(sys.argv[2], 'frame%d.term' % count), 'w') as f:
+                  f.write('1' if had_term else '0')
+              count += 1
+          print(count)
+          PV60SPLITEOF
+          )" || PV60_FAIL="ramdisk verify frame split failed"
+                if [ -z "$PV60_FAIL" ] && [ "$NVF" != "$NFR" ]; then PV60_FAIL="ramdisk repack frame count changed ($NFR -> $NVF)"; fi
+                V_CAND=0
+                if [ -z "$PV60_FAIL" ]; then
+                  FI=0
+                  while [ "$FI" -lt "${NVF:-0}" ]; do
+                    VRR="$VFD/root$FI"; mkdir -p "$VRR"
+                    if ! pv60_lz4leg_dec < "$VFD/raw/frame$FI.lz4" > "$VFD/frame$FI.cpio" 2>/dev/null; then PV60_FAIL="ramdisk verify frame $FI decode failed"; break; fi
+                    if ! pv60_newc_extract "$VRR" "$VFD/root$FI.records.json" < "$VFD/frame$FI.cpio"; then PV60_FAIL="ramdisk verify frame $FI extract failed"; break; fi
+                    find "$VRR" -type f -name 'fstab.*' 2>/dev/null | sort > "$VFD/cand$FI.txt"
+                    while IFS= read -r VF; do
+                      if [ -z "$VF" ]; then continue; fi
+                      V_CAND=$((V_CAND+1))
+                      if awk '$2=="/data"' "$VF" 2>/dev/null | grep -qE 'fileencryption=|metadata_encryption=|keydirectory='; then PV60_FAIL="ramdisk verify frame $FI: FBE flags survive"; break; fi
+                    done < "$VFD/cand$FI.txt"
+                    if [ -n "$PV60_FAIL" ]; then break; fi
+                    FI=$((FI+1))
+                  done
+                fi
+                if [ -z "$PV60_FAIL" ] && [ "$V_CAND" != "$FR_CAND" ]; then PV60_FAIL="ramdisk repack verify: fstab count changed ($FR_CAND -> $V_CAND)"; fi
+                if [ -z "$PV60_FAIL" ]; then
+                  cp "$FRD/joined.lz4" "$RD"
+                  echo "posture: ramdisk.img re-emitted as $NFR lz4-legacy frames with patched fstab content (verified)"
+                fi
+              fi
+              if [ -n "$PV60_FAIL" ]; then echo "POSTURE: NOT APPLIED - $PV60_FAIL"; exit 1; fi
+            fi
+            if [ -z "$PV60_RD_DONE" ]; then
           case "$RDMAGIC" in
             1f8b*) RDFMT=gzip; gzip -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk gzip extract failed" ;;
             04224c41) RDFMT=lz4frame; if command -v lz4 >/dev/null 2>&1; then lz4 -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk lz4 extract failed"; else PV60_FAIL="ramdisk is lz4-frame but no lz4 tool exists on the runner"; fi ;;
@@ -577,16 +770,26 @@ jobs:
             mkdir -p "$RDTMP/root"
             pv60_newc_extract "$RDTMP/root" "$RDTMP/root.records.json" < "$RDTMP/rd.cpio" || PV60_FAIL="ramdisk cpio extract failed"
           fi
+          if [ -z "$PV60_FAIL" ]; then
+            # v60-r5: explain the ramdisk observation instead of asserting it -
+            # live run No.5 found no fstab.* in the ramdisk and the phase log
+            # could not show what the ramdisk DOES carry. Print the top level.
+            echo "posture: ramdisk.img top-level listing (names only):"
+            ls -A "$RDTMP/root" 2>/dev/null | while IFS= read -r PV60_N; do echo "posture:   ramdisk top: $PV60_N"; done
+            echo "posture: ramdisk.img holds $(find "$RDTMP/root" -type f 2>/dev/null | wc -l) regular files in total"
+          fi
           RD_FOUND=0
           if [ -z "$PV60_FAIL" ]; then
             while IFS= read -r FF; do
               if [ -z "$FF" ]; then continue; fi
               RD_FOUND=1
+              echo "posture: candidate ramdisk:${FF#$RDTMP/root/}"
               pv60_patch_file "$FF" || PV60_FAIL="ramdisk fstab $FF unpatchable"
+              if [ -z "$PV60_FAIL" ]; then pv60_count "ramdisk:${FF#$RDTMP/root/}"; fi
             done <<EOF_PV60
           $(find "$RDTMP/root" -name 'fstab.*' -type f 2>/dev/null)
           EOF_PV60
-            if [ "$RD_FOUND" != "1" ]; then echo "posture: no fstab.* found inside ramdisk.img (the governing copy may live in vendor.img - checked below)"; fi
+            if [ "$RD_FOUND" != "1" ]; then echo "posture: no fstab.* found inside ramdisk.img (the governing copy may live in vendor.img or system.img - both are searched exhaustively below)"; fi
           fi
           if [ -z "$PV60_FAIL" ] && [ "$RD_FOUND" = "1" ]; then
             case "$RDFMT" in
@@ -614,42 +817,453 @@ jobs:
             if printf '%s' "$VLINE" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then VFAIL="FBE flags survive in the repacked ramdisk"; fi
             if [ -n "$VFAIL" ]; then PV60_FAIL="ramdisk repack verification failed ($VFAIL)"; cp "$RDTMP/ramdisk.orig.bak" "$RD"; fi
           fi
-          VI="$PV60_SYSROOT/vendor.img"
-          if [ -z "$PV60_FAIL" ] && [ -s "$VI" ]; then
-            VLIST="$(debugfs -R 'ls /etc' "$VI" 2>/dev/null | tr ' ' '\n' | grep -E '^fstab\.' | sort -u)"
-            if [ -z "$VLIST" ]; then echo "posture: vendor.img carries no /etc/fstab.* (the ramdisk copy is the only patch candidate)"; fi
-            for VF in $VLIST; do
-              debugfs -R "cat /etc/$VF" "$VI" > "$RDTMP/vendor-fstab.txt" 2>/dev/null
-              VBEFORE="$(awk '$2=="/data"' "$RDTMP/vendor-fstab.txt")"
-              echo "posture: vendor.img /etc/$VF /data line: $VBEFORE"
-              if printf '%s' "$VBEFORE" | grep -Eq 'fileencryption=|metadata_encryption='; then
-                MNT="$(mktemp -d)"
-                if sudo mount -o loop,rw "$VI" "$MNT" 2>/dev/null; then
-                  pv60_patch_file "$MNT/etc/$VF" || PV60_FAIL="vendor fstab $VF unpatchable"
-                  sync; sudo umount "$MNT" 2>/dev/null
-                  debugfs -R "cat /etc/$VF" "$VI" > "$RDTMP/vendor-fstab-after.txt" 2>/dev/null
-                  VAFTER="$(awk '$2=="/data"' "$RDTMP/vendor-fstab-after.txt")"
-                  echo "posture: vendor.img /etc/$VF /data line after patch: $VAFTER"
-                  if printf '%s' "$VAFTER" | grep -Eq 'fileencryption=|metadata_encryption='; then PV60_FAIL="vendor fstab patch did not land"; fi
-                else
-                  PV60_FAIL="vendor.img fstab carries FBE flags but the loop mount failed - cannot patch"
+          fi
+            # v60-r5 EXHAUSTIVE image-component fstab discovery. r4 searched
+            # the ramdisk and vendor.img:/etc only, found nothing, and printed
+            # APPLIED over an empty set. Desk inspection of the GENUINE SDK
+            # package (x86_64-34_r14.zip, sha1 verified against the SDK repo
+            # XML) shows the real layout of this image set:
+            #   - vendor.img and system.img are GPT-partitioned DISK images,
+            #     not bare filesystems - r4's debugfs call on the whole file
+            #     died with "Bad magic number" (stderr swallowed), which is why
+            #     vendor looked empty. vendor.img holds one partition "vendor"
+            #     (ext4 at byte offset 1048576) with /etc/fstab.ranchu inside.
+            #   - system.img holds GPT partitions "vbmeta" and "super"; super
+            #     is an LP (dynamic partitions) container whose logical
+            #     partitions include ANOTHER ext4 "vendor" carrying a second
+            #     /etc/fstab.ranchu, plus system (ext4, only the non-governing
+            #     /system/etc/fstab.postinstall), system_ext, product and
+            #     system_dlkm (erofs).
+            #   - the governing /data line is byte-identical in every copy.
+            # So the search walks containers recursively: sparse decode -> GPT
+            # partition carve -> LP logical-partition carve -> filesystem. At
+            # the filesystem level, ext4 is walked and patched unprivileged via
+            # debugfs (rm/write + sif restore, re-read verified); erofs and
+            # unknown types go through the guarded sudo loop-mount branch,
+            # which enumerates read-only when it cannot patch and fails closed
+            # only on real machinery errors. Every governing copy found is
+            # counted in the PV60_GOV_* globals; the verdict below is computed
+            # from those counters, so an empty search can no longer pass.
+            PV60_IMGPY="$RDTMP/pv60img.py"
+            cat > "$PV60_IMGPY" <<'PV60IMGEOF'
+          import struct, sys
+
+          def rd(p):
+              with open(p, 'rb') as f:
+                  return f.read()
+
+          def img_type(p):
+              with open(p, 'rb') as f:
+                  head = f.read(16384)
+              if head[:4] == b'\x3a\xff\x26\xed':
+                  return 'sparse'
+              if head[512:520] == b'EFI PART':
+                  return 'gpt'
+              if head[1080:1082] == b'\x53\xef':
+                  return 'ext4'
+              if head[1024:1028] == b'\xe2\xe1\xf5\xe0':
+                  return 'erofs'
+              if head[4096:4100] == b'\x67\x44\x6c\x61' and head[12288:12292] == b'\x30\x50\x4c\x41':
+                  return 'lp'
+              return 'unknown'
+
+          def gpt_entries(p):
+              with open(p, 'rb') as f:
+                  f.seek(512)
+                  hdr = f.read(92)
+                  if hdr[:8] != b'EFI PART':
+                      return []
+                  ent_lba, = struct.unpack_from('<Q', hdr, 72)
+                  nent, = struct.unpack_from('<I', hdr, 80)
+                  esz, = struct.unpack_from('<I', hdr, 84)
+                  f.seek(ent_lba * 512)
+                  out = []
+                  for _ in range(nent):
+                      e = f.read(esz)
+                      if len(e) < 56 or e[:16] == b'\x00' * 16:
+                          continue
+                      first, = struct.unpack_from('<Q', e, 32)
+                      last, = struct.unpack_from('<Q', e, 40)
+                      raw = e[56:128].decode('utf-16le', 'replace').rstrip('\x00')
+                      name = ''.join(c if (c.isalnum() or c in '._-') else '_' for c in raw) or 'part'
+                      out.append((name, first * 512, (last - first + 1) * 512))
+                  return out
+
+          def lp_entries(p):
+              with open(p, 'rb') as f:
+                  f.seek(4096)
+                  geo = f.read(52)
+                  if geo[:4] != b'\x67\x44\x6c\x61':
+                      return []
+                  f.seek(12288)
+                  hdr = f.read(128)
+                  if hdr[:4] != b'\x30\x50\x4c\x41':
+                      return []
+                  hsize, = struct.unpack_from('<I', hdr, 8)
+                  po, pn, ps = struct.unpack_from('<III', hdr, 80)
+                  eo, en, es = struct.unpack_from('<III', hdr, 92)
+                  base = 12288 + hsize
+                  f.seek(base + eo)
+                  exts = []
+                  for _ in range(en):
+                      e = f.read(es)
+                      ns, tt, td = struct.unpack_from('<QIQ', e, 0)
+                      exts.append((td * 512, ns * 512))
+                  f.seek(base + po)
+                  out = []
+                  for _ in range(pn):
+                      e = f.read(ps)
+                      name = e[:36].split(b'\x00')[0].decode('ascii', 'replace')
+                      name = ''.join(c if (c.isalnum() or c in '._-') else '_' for c in name) or 'part'
+                      fe, ne = struct.unpack_from('<II', e, 40)
+                      segs = [exts[j] for j in range(fe, fe + ne) if j < len(exts)]
+                      out.append((name, segs))
+                  return out
+
+          def carve(src, off, size, dst):
+              # Sparse-aware: all-zero chunks become holes, so carving a 4.3 GB
+              # super partition costs its real data, not its nominal size (the
+              # phase works in a mktemp dir; runner /tmp space is finite).
+              with open(src, 'rb') as f, open(dst, 'wb') as o:
+                  f.seek(off)
+                  left = size
+                  while left > 0:
+                      b = f.read(min(left, 8 * 1024 * 1024))
+                      if not b:
+                          break
+                      if b == b'\x00' * len(b):
+                          o.seek(len(b), 1)
+                      else:
+                          o.write(b)
+                      left -= len(b)
+                  o.truncate(size)
+
+          def putback(dst, off, src):
+              data = rd(src)
+              with open(dst, 'r+b') as f:
+                  f.seek(off)
+                  f.write(data)
+
+          def unsparse(src, dst):
+              data = rd(src)
+              if data[:4] != b'\x3a\xff\x26\xed':
+                  raise SystemExit('not a sparse image')
+              (_m, _maj, _min, fh, bh, total, nch) = struct.unpack_from('<IHHHHII', data, 0)
+              pos = 28
+              out = bytearray()
+              for _i in range(nch):
+                  ct, _r, cblks, tsz = struct.unpack_from('<HHII', data, pos)
+                  pos += 12
+                  if ct == 0xCAC1:
+                      out += data[pos:pos + cblks * bh]
+                      pos += cblks * bh
+                  elif ct == 0xCAC2:
+                      out += data[pos:pos + 4] * (cblks * bh // 4)
+                      pos += 4
+                  elif ct == 0xCAC3:
+                      out += b'\x00' * (cblks * bh)
+                  elif ct == 0xCAC4:
+                      pos += 4
+                  else:
+                      raise SystemExit('sparse chunk type %04x' % ct)
+              if len(out) != total * bh:
+                  raise SystemExit('sparse decode size mismatch')
+              with open(dst, 'wb') as f:
+                  f.write(out)
+
+          def resparse(src, dst, total):
+              data = rd(src)
+              bh = 4096
+              if len(data) != total * bh:
+                  raise SystemExit('resparse size mismatch')
+              chunks = []
+              pos = 0
+              while pos < len(data):
+                  blk = data[pos:pos + bh]
+                  if blk == b'\x00' * bh:
+                      chunks.append((0xCAC3, 1, 12))
+                      pos += bh
+                      continue
+                  fill = None
+                  v = blk[:4]
+                  if v * (bh // 4) == blk:
+                      fill = v
+                  if fill is not None:
+                      chunks.append((0xCAC2, 1, 16))
+                      chunks.append(('FILL', fill))
+                      pos += bh
+                      continue
+                  chunks.append((0xCAC1, 1, 12 + bh))
+                  chunks.append(('RAW', blk))
+                  pos += bh
+              hdr = struct.pack('<IHHHHII', 0xED26FF3A, 1, 0, 28, 12, total, len([c for c in chunks if c[0] != 'FILL' and c[0] != 'RAW']))
+              with open(dst, 'wb') as f:
+                  f.write(hdr)
+                  for c in chunks:
+                      if c[0] == 'FILL' or c[0] == 'RAW':
+                          f.write(c[1])
+                      else:
+                          f.write(struct.pack('<HHII', c[0], 0, c[1], c[2]))
+
+          def lz4split(src, outdir):
+              import os
+              data = rd(src)
+              if data[:4] != b'\x02\x21\x4c\x18':
+                  raise SystemExit('not an lz4 legacy stream')
+              frames = []
+              pos = 0
+              while pos < len(data):
+                  if data[pos:pos + 4] != b'\x02\x21\x4c\x18':
+                      raise SystemExit('lz4 frame %d: bad magic at %d' % (len(frames), pos))
+                  start = pos
+                  pos += 4
+                  while True:
+                      (size,) = struct.unpack_from('<I', data, pos)
+                      pos += 4
+                      if size == 0:
+                          break
+                      pos += size & 0x7FFFFFFF
+                  frames.append(data[start:pos])
+              for i, fr in enumerate(frames):
+                  with open(os.path.join(outdir, 'frame%d.lz4' % i), 'wb') as f:
+                      f.write(fr)
+              print(len(frames))
+
+          def main():
+              cmd = sys.argv[1]
+              if cmd == 'type':
+                  print(img_type(sys.argv[2]))
+              elif cmd == 'sparsedims':
+                  data = rd(sys.argv[2])
+                  (_m, _a, _b, fh, bh, total, _n) = struct.unpack_from('<IHHHHII', data, 0)
+                  print(total)
+              elif cmd == 'unsparse':
+                  unsparse(sys.argv[2], sys.argv[3])
+              elif cmd == 'resparse':
+                  resparse(sys.argv[2], sys.argv[3], int(sys.argv[4]))
+              elif cmd == 'gptlist':
+                  for (n, o, s) in gpt_entries(sys.argv[2]):
+                      print('%s\t%d\t%d' % (n, o, s))
+              elif cmd == 'lplist':
+                  for (n, segs) in lp_entries(sys.argv[2]):
+                      print('%s\t%s' % (n, ','.join('%d+%d' % sg for sg in segs)))
+              elif cmd == 'carve':
+                  carve(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), sys.argv[5])
+              elif cmd == 'carvesegs':
+                  segs = [tuple(int(x) for x in s.split('+')) for s in sys.argv[3].split(',') if s]
+                  with open(sys.argv[4], 'wb') as o:
+                      for (off, size) in segs:
+                          with open(sys.argv[2], 'rb') as f:
+                              f.seek(off)
+                              left = size
+                              while left > 0:
+                                  b = f.read(min(left, 8 * 1024 * 1024))
+                                  if not b:
+                                      break
+                                  if b == b'\x00' * len(b):
+                                      o.seek(len(b), 1)
+                                  else:
+                                      o.write(b)
+                                  left -= len(b)
+                      o.truncate(sum(s for (_o, s) in segs))
+              elif cmd == 'putbacksegs':
+                  segs = [tuple(int(x) for x in s.split('+')) for s in sys.argv[3].split(',') if s]
+                  data = rd(sys.argv[4])
+                  pos = 0
+                  with open(sys.argv[2], 'r+b') as f:
+                      for (off, size) in segs:
+                          f.seek(off)
+                          f.write(data[pos:pos + size])
+                          pos += size
+                  if pos != len(data):
+                      raise SystemExit('putbacksegs size mismatch')
+              elif cmd == 'putback':
+                  putback(sys.argv[2], int(sys.argv[3]), sys.argv[4])
+              elif cmd == 'lz4split':
+                  lz4split(sys.argv[2], sys.argv[3])
+              else:
+                  raise SystemExit('unknown subcommand ' + cmd)
+
+          main()
+          PV60IMGEOF
+            pv60_img_type() { python3 "$PV60_IMGPY" type "$1" 2>/dev/null || echo unknown; }
+            pv60_ext_list() {
+              # $1 = ext image file, $2 = output file (lines "f <path>" / "l <path>")
+              # Breadth-first debugfs walk over ls -p. Entry kind comes from the
+              # st_mode TYPE digits as printed by debugfs (dir 04, regular 10,
+              # symlink 12) - verified against the genuine vendor partition,
+              # whose regular files print e.g. /272/100644/0/0/fstab.ranchu/985/.
+              local IMG="$1" OUT="$2" D NEXT E MODE NM P
+              : > "$OUT"; local SEEN="$OUT.dirs"; : > "$SEEN"
+              echo "/" >> "$SEEN"
+              while IFS= read -r D; do
+                NEXT=""
+                while IFS= read -r E; do
+                  [ -z "$E" ] && continue
+                  MODE="$(printf '%s' "$E" | awk -F/ '{print $3}')"
+                  NM="$(printf '%s' "$E" | awk -F/ '{print $6}')"
+                  case "$NM" in ''|.|..) continue ;; esac
+                  case "$MODE" in
+                    04*) NEXT="$NEXT ${D%/}/$NM" ;;
+                    10*) echo "f ${D%/}/$NM" >> "$OUT" ;;
+                    12*) echo "l ${D%/}/$NM" >> "$OUT" ;;
+                  esac
+                done <<PV60DBGEOF
+          $(debugfs -R "ls -p $D" "$IMG" 2>/dev/null)
+          PV60DBGEOF
+                for P in $NEXT; do echo "$P" >> "$SEEN"; done
+              done < "$SEEN"
+            }
+            pv60_ext_patch_one() {
+              # $1 ext image, $2 in-image path, $3 display label.
+              local IMG="$1" P="$2" DISP="$3" ENT MODE UID_ GID_ HOSTF
+              ENT="$(debugfs -R "ls -p ${P%/*}/" "$IMG" 2>/dev/null | grep "/${P##*/}/" | head -1)"
+              if [ -z "$ENT" ]; then echo "posture: $DISP - stat lookup failed"; return 1; fi
+              MODE="$(printf '%s' "$ENT" | awk -F/ '{print $3}')"
+              UID_="$(printf '%s' "$ENT" | awk -F/ '{print $4}')"
+              GID_="$(printf '%s' "$ENT" | awk -F/ '{print $5}')"
+              HOSTF="$RDTMP/hostfstab.txt"
+              if ! debugfs -R "cat $P" "$IMG" > "$HOSTF" 2>/dev/null; then echo "posture: $DISP - debugfs cat failed"; return 1; fi
+              pv60_patch_file "$HOSTF" "$DISP" || return 1
+              if [ "$PV60_PF" = patched ]; then
+                debugfs -w -R "rm $P" "$IMG" >/dev/null 2>&1 || { echo "posture: $DISP - debugfs rm failed"; return 1; }
+                debugfs -w -R "write $HOSTF $P" "$IMG" >/dev/null 2>&1 || { echo "posture: $DISP - debugfs write failed"; return 1; }
+                debugfs -w -R "sif $P mode 0$MODE" "$IMG" >/dev/null 2>&1 || true
+                debugfs -w -R "sif $P uid $UID_" "$IMG" >/dev/null 2>&1 || true
+                debugfs -w -R "sif $P gid $GID_" "$IMG" >/dev/null 2>&1 || true
+                # re-read the patched copy from the image: flags must be gone
+                if debugfs -R "cat $P" "$IMG" 2>/dev/null | awk '$2=="/data"' | grep -qE 'fileencryption=|metadata_encryption=|keydirectory='; then
+                  echo "posture: $DISP - flags still present after in-image patch"; return 1
                 fi
+                echo "posture: $DISP re-read from image: FBE flags gone"
+              fi
+              return 0
+            }
+            pv60_component_ext() {
+              # $1 = ext image file, $2 = component label
+              local IMG="$1" LBL="$2" LIST KIND P REL
+              LIST="$RDTMP/list-$(echo "$LBL" | tr '/:.' '___').txt"
+              pv60_ext_list "$IMG" "$LIST"
+              echo "posture: $LBL walk: $(grep -c '^f ' "$LIST" 2>/dev/null || echo 0) files, $(grep -c '^l ' "$LIST" 2>/dev/null || echo 0) symlinks"
+              while IFS= read -r REL; do
+                [ -z "$REL" ] && continue
+                KIND="${REL%% *}"; P="${REL#* }"
+                case "${P##*/}" in fstab*) : ;; *) continue ;; esac
+                if [ "$KIND" = l ]; then echo "POSTURE: NOT APPLIED - $LBL:$P is a symlink fstab (unresolvable target)"; exit 1; fi
+                echo "posture: candidate $LBL:$P"
+                pv60_ext_patch_one "$IMG" "$P" "$LBL:$P" || { echo "POSTURE: NOT APPLIED - patch failed for $LBL:$P"; exit 1; }
+                pv60_count "$LBL:$P"
+              done < "$LIST"
+            }
+            pv60_component_mount() {
+              # $1 = image file, $2 = label, $3 = type (erofs/unknown/...).
+              # Guarded sudo loop-mount fallback, the r4 vendor pattern
+              # generalised. Prefer a read-write mount (patch in place); a
+              # read-only mount enumerates, and a governing copy that carries
+              # flags but cannot be written FAILS CLOSED - it is never counted
+              # as clean, so the verdict cannot pass over it.
+              local IMG="$1" LBL="$2" T="$3" MNT F REL WR
+              MNT="$RDTMP/mnt-$(echo "$LBL" | tr '/:.' '___')"
+              mkdir -p "$MNT"
+              WR=0
+              if sudo -n mount -o loop,rw "$IMG" "$MNT" 2>/dev/null; then
+                WR=1; echo "posture: $LBL ($T) loop-mounted read-write via sudo"
+              elif sudo -n mount -o loop,ro "$IMG" "$MNT" 2>/dev/null; then
+                echo "posture: $LBL ($T) loop-mounted read-only via sudo (enumeration only)"
+              else
+                echo "posture: $LBL ($T) cannot be enumerated unprivileged (no debugfs path for this fs, no passwordless sudo mount) - if a governing fstab lived only here the verdict counters will show it as missing"
+                return 0
+              fi
+              find "$MNT" -name 'fstab*' 2>/dev/null | sort > "$RDTMP/mount-cand.txt"
+              if [ ! -s "$RDTMP/mount-cand.txt" ]; then echo "posture: $LBL - no fstab* found (mounted walk)"; fi
+              while IFS= read -r F; do
+                [ -z "$F" ] && continue
+                REL="${F#$MNT}"
+                echo "posture: candidate $LBL:$REL"
+                pv60_patch_file "$F" "$LBL:$REL" || { echo "POSTURE: NOT APPLIED - patch computation failed for $LBL:$REL"; exit 1; }
+                if [ "$PV60_PF" = patched ] && [ "$WR" != 1 ]; then
+                  echo "POSTURE: NOT APPLIED - governing fstab $LBL:$REL carries FBE flags but its component mounted read-only"
+                  exit 1
+                fi
+                pv60_count "$LBL:$REL"
+              done < "$RDTMP/mount-cand.txt"
+              sudo -n umount "$MNT" 2>/dev/null || umount "$MNT" 2>/dev/null || true
+            }
+            pv60_component() {
+              # $1 = image file, $2 = component label. Recursive container walk:
+              # sparse -> GPT -> LP -> ext4/erofs/unknown leaf handling.
+              local F="$1" LBL="$2" T RAW TOTAL BEFORE_P LIST NAME OFF SIZE SEGS PART
+              T="$(pv60_img_type "$F")"
+              echo "posture: component $LBL type=$T size=$(stat -c%s "$F" 2>/dev/null || echo '?')"
+              case "$T" in
+                sparse)
+                  RAW="$F.raw"
+                  TOTAL="$(python3 "$PV60_IMGPY" sparsedims "$F" 2>/dev/null || echo 0)"
+                  if [ -z "$TOTAL" ] || [ "$TOTAL" = 0 ]; then echo "POSTURE: NOT APPLIED - sparse header unreadable for $LBL"; exit 1; fi
+                  python3 "$PV60_IMGPY" unsparse "$F" "$RAW" || { echo "POSTURE: NOT APPLIED - sparse decode failed for $LBL"; exit 1; }
+                  BEFORE_P=$PV60_GOV_PATCHED
+                  pv60_component "$RAW" "$LBL"
+                  if [ "$PV60_GOV_PATCHED" -gt "$BEFORE_P" ]; then
+                    python3 "$PV60_IMGPY" resparse "$RAW" "$F" "$TOTAL" || { echo "POSTURE: NOT APPLIED - sparse re-encode failed for $LBL"; exit 1; }
+                    echo "posture: $LBL sparse re-encoded with patched contents"
+                  else
+                    echo "posture: $LBL sparse container unchanged (nothing patched inside)"
+                  fi
+                  rm -f "$RAW" ;;
+                gpt)
+                  LIST="$RDTMP/gpt-$(echo "$LBL" | tr '/:.' '___').txt"
+                  python3 "$PV60_IMGPY" gptlist "$F" > "$LIST" 2>/dev/null || { echo "POSTURE: NOT APPLIED - GPT parse failed for $LBL"; exit 1; }
+                  if [ ! -s "$LIST" ]; then echo "POSTURE: NOT APPLIED - GPT in $LBL has no partitions"; exit 1; fi
+                  while IFS="$(printf '\t')" read -r NAME OFF SIZE; do
+                    [ -z "$NAME" ] && continue
+                    PART="$RDTMP/part-$(echo "$LBL-$NAME" | tr '/:.' '___').img"
+                    python3 "$PV60_IMGPY" carve "$F" "$OFF" "$SIZE" "$PART" || { echo "POSTURE: NOT APPLIED - GPT carve failed for $LBL:$NAME"; exit 1; }
+                    BEFORE_P=$PV60_GOV_PATCHED
+                    pv60_component "$PART" "$LBL:$NAME"
+                    if [ "$PV60_GOV_PATCHED" -gt "$BEFORE_P" ]; then
+                      python3 "$PV60_IMGPY" putback "$F" "$OFF" "$PART" || { echo "POSTURE: NOT APPLIED - GPT putback failed for $LBL:$NAME"; exit 1; }
+                      echo "posture: $LBL:$NAME patched partition written back at offset $OFF"
+                    fi
+                    rm -f "$PART"
+                  done < "$LIST" ;;
+                lp)
+                  LIST="$RDTMP/lp-$(echo "$LBL" | tr '/:.' '___').txt"
+                  python3 "$PV60_IMGPY" lplist "$F" > "$LIST" 2>/dev/null || { echo "POSTURE: NOT APPLIED - LP parse failed for $LBL"; exit 1; }
+                  if [ ! -s "$LIST" ]; then echo "POSTURE: NOT APPLIED - LP container $LBL has no logical partitions"; exit 1; fi
+                  while IFS="$(printf '\t')" read -r NAME SEGS; do
+                    [ -z "$NAME" ] && continue
+                    PART="$RDTMP/part-$(echo "$LBL-$NAME" | tr '/:.' '___').img"
+                    python3 "$PV60_IMGPY" carvesegs "$F" "$SEGS" "$PART" || { echo "POSTURE: NOT APPLIED - LP carve failed for $LBL:$NAME"; exit 1; }
+                    BEFORE_P=$PV60_GOV_PATCHED
+                    pv60_component "$PART" "$LBL:$NAME"
+                    if [ "$PV60_GOV_PATCHED" -gt "$BEFORE_P" ]; then
+                      python3 "$PV60_IMGPY" putbacksegs "$F" "$SEGS" "$PART" || { echo "POSTURE: NOT APPLIED - LP putback failed for $LBL:$NAME"; exit 1; }
+                      echo "posture: $LBL:$NAME patched logical partition written back"
+                    fi
+                    rm -f "$PART"
+                  done < "$LIST" ;;
+                ext4) pv60_component_ext "$F" "$LBL" ;;
+                *) pv60_component_mount "$F" "$LBL" "$T" ;;
+              esac
+            }
+            for PV60_IMG in vendor.img system.img; do
+              if [ -s "$PV60_SYSROOT/$PV60_IMG" ]; then
+                pv60_component "$PV60_SYSROOT/$PV60_IMG" "$PV60_IMG"
+              else
+                echo "posture: $PV60_IMG absent in the system image dir - skipped"
               fi
             done
-          fi
-          SI="$PV60_SYSROOT/system.img"
-          if [ -s "$SI" ]; then
-            SLIST="$(debugfs -R 'ls /etc' "$SI" 2>/dev/null | tr ' ' '\n' | grep -E '^fstab\.' | sort -u)"
-            for SF in $SLIST; do
-              debugfs -R "cat /etc/$SF" "$SI" 2>/dev/null | awk -v n="$SF" '$2=="/data" {print "posture: system.img /etc/" n " /data line (print-only, never patched - verity): " $0}'
-            done
-          fi
           if [ -n "$PV60_FAIL" ]; then
             echo "POSTURE: NOT APPLIED - $PV60_FAIL (the run aborts here by design: a half-patched posture would test nothing)"
             exit 1
           fi
+          echo "posture: governing fstab accounting: found=$PV60_GOV_FOUND (patched=$PV60_GOV_PATCHED, already flag-free=$PV60_GOV_CLEAN); governing copies: ${PV60_GOV_PATHS:-none}"
+          if [ "$PV60_GOV_FOUND" = "0" ]; then
+            echo "POSTURE: NOT APPLIED - no governing fstab copy found in any image component"
+            exit 1
+          fi
           echo "PV_POSTURE=fstab-unencrypted-v60test" >> "$GITHUB_ENV"
-          echo "POSTURE: APPLIED - every governing fstab copy in the image now mounts /data with no fileencryption/metadata_encryption; the first /data format under this image is plaintext. Guest-side proof is the POSTURE CHECK line in wake part 2 (ro.crypto.state) plus the DATA_PERSIST / TESTSTATE grades."
+          echo "POSTURE: APPLIED - $PV60_GOV_PATCHED of $PV60_GOV_FOUND governing fstab copies patched (patched copies: ${PV60_PATCHED_PATHS:-none}; all governing copies: $PV60_GOV_PATHS); every governing /data line was re-read from its image component and verified flag-free after patching; the first /data format under this image is plaintext. Guest-side proof is the POSTURE CHECK line in wake part 2 (ro.crypto.state) plus the DATA_PERSIST / TESTSTATE grades."
           { echo "posture_phase=v60test-fstab-strip"; echo "posture_sysroot=$PV60_SYSROOT"; } >> "$EVID/02-avd.txt" 2>/dev/null || true
       - name: PhoneVault step 3 of 15 - restore fetch, pinned + certificate-verified (v3.8)
         shell: bash
