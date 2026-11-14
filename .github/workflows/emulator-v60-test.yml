@@ -367,9 +367,11 @@ jobs:
           # fails closed like every other unhandled format.
           PV60_LZ4LEG=""; PV60_LZ4PY="$RDTMP/pv60_lz4legacy.py"
           pv60_lz4leg_setup() {
-            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli ($(lz4 --version 2>/dev/null | head -1))"; return 0; fi
-            if sudo -n true 2>/dev/null; then sudo -n apt-get update -qq >/dev/null 2>&1; sudo -n apt-get install -y -qq lz4 >/dev/null 2>&1; fi
-            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli (apt-restored)"; return 0; fi
+            # v60-r6: the embedded python codec is materialised FIRST, before
+            # backend selection: the multi-frame ramdisk flow decodes through
+            # it on every host (pv60_frame_dec / pv60_frame_enc below), so
+            # the codec file must exist even when the CLI backend wins
+            # selection for the single-stream paths.
             cat > "$PV60_LZ4PY" <<'PV60PYEOF'
           import struct, sys
           import lz4.block
@@ -405,6 +407,9 @@ jobs:
           _data = sys.stdin.buffer.read()
           sys.stdout.buffer.write(dec(_data) if sys.argv[1] == "dec" else enc(_data))
           PV60PYEOF
+            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli ($(lz4 --version 2>/dev/null | head -1))"; return 0; fi
+            if sudo -n true 2>/dev/null; then sudo -n apt-get update -qq >/dev/null 2>&1; sudo -n apt-get install -y -qq lz4 >/dev/null 2>&1; fi
+            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli (apt-restored)"; return 0; fi
             if python3 -c 'import lz4.block' >/dev/null 2>&1; then PV60_LZ4LEG=py; echo "posture: lz4-legacy backend=py (embedded legacy codec over the python3 lz4 module)"; return 0; fi
             python3 -m pip install --user --break-system-packages --quiet lz4 >/dev/null 2>&1
             if python3 -c 'import lz4.block' >/dev/null 2>&1; then PV60_LZ4LEG=py; echo "posture: lz4-legacy backend=py (pip-restored lz4 module)"; return 0; fi
@@ -412,6 +417,43 @@ jobs:
           }
           pv60_lz4leg_dec() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -dc; else python3 "$PV60_LZ4PY" dec; fi; }
           pv60_lz4leg_enc() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -l -f -c; else python3 "$PV60_LZ4PY" enc; fi; }
+          # v60-r6: the multi-frame ramdisk flow decodes and encodes ONLY
+          # through the embedded python codec, on every host - never through
+          # the lz4 CLI. Live run 0' (43567013244) died at "ramdisk frame 0
+          # decode failed" while the desk rehearsal on the genuine slices
+          # passed: the desk VM has no lz4 CLI (setup picked this codec),
+          # the runner has the CLI (setup picked it). Mechanism, proven on
+          # the genuine bytes with a locally built lz4 1.9.4: the legacy
+          # streams here are EOF-terminated (magic + blocks, NO zero
+          # end-mark - the CLI's own -l encoder writes none either). The
+          # splitter appends the 4-byte zero end-mark this codec requires
+          # (its dec() returns only at a zero block size and reports a
+          # truncated header at EOF). The CLI's legacy reader has NO
+          # end-mark case (programs/lz4io.c, LZ4IO_decodeLegacyStream): it
+          # ends a legacy stream only at EOF or at an oversized "block
+          # size" (the next frame's magic, held in g_magicRead); a zero
+          # block size is passed to LZ4_decompress_safe as a zero-length
+          # block, which returns -1 (lib/lz4.c: srcSize==0 -> -1), so the
+          # CLI exits 54 "Decoding Failed ! Corrupted input detected !" -
+          # AFTER writing the full byte-correct output, which the phase
+          # discarded on the exit code (stderr was sent to /dev/null). The
+          # CLI would also have failed the repack: it writes no end-mark
+          # when encoding, so a re-encoded no-end-mark frame lacks the
+          # tail the term-style check expects. One codec for frames on
+          # every host removes the whole desk/live divergence class: the
+          # desk rehearsal, the fixture and the live run now execute the
+          # identical decode of the identical slices. The CLI stays in use
+          # only where it is proven (the single-stream whole-file path,
+          # whose concatenated frames it handles natively via g_magicRead).
+          pv60_lz4py_ensure() {
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then return 0; fi
+            python3 -m pip install --user --break-system-packages --quiet lz4 >/dev/null 2>&1
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then return 0; fi
+            return 1
+          }
+          pv60_frame_dec() { python3 "$PV60_LZ4PY" dec; }
+          pv60_frame_enc() { python3 "$PV60_LZ4PY" enc; }
+          pv60_errtail() { tail -c 300 "$1" 2>/dev/null | tr '\n' ' '; }
           # v60-r4 NEWC tooling: live run No.4 got one layer deeper - the
           # LZ4-legacy decode worked, then GNU cpio died extracting the
           # ramdisk: "cpio: dev/null: Cannot mknod: Operation not
@@ -604,8 +646,16 @@ jobs:
               # magic, or EOF), run the usual decode/extract/patch/repack per
               # frame, and re-concatenate preserving each frame's original
               # end-mark style.
+              # v60-r6: per-frame decode/encode uses ONLY the embedded
+              # python codec (pv60_frame_dec / pv60_frame_enc), and decoder
+              # stderr is captured into every frame failure line - the lz4
+              # CLI's legacy reader rejects the end-marked slices written
+              # here (see the r6 note at pv60_frame_dec below).
               PV60_RD_DONE=1
               if pv60_lz4leg_setup; then :; else PV60_FAIL="ramdisk lz4-legacy tooling unavailable for the multi-frame flow"; fi
+              if [ -z "$PV60_FAIL" ]; then
+                if pv60_lz4py_ensure; then echo "posture: ramdisk multi-frame codec=py (embedded python codec, identical on every host - v60-r6)"; else PV60_FAIL="ramdisk multi-frame flow needs the embedded python lz4 codec, but the python3 lz4 module could not be obtained"; fi
+              fi
               FRD="$RDTMP/frames"; mkdir -p "$FRD/raw"
               if [ -z "$PV60_FAIL" ]; then
                 NFR="$(python3 - "$RD" "$FRD/raw" <<'PV60SPLITEOF'
@@ -649,7 +699,7 @@ jobs:
                 FI=0
                 while [ "$FI" -lt "${NFR:-0}" ]; do
                   FRC="$FRD/frame$FI.cpio"; FRR="$FRD/root$FI"; mkdir -p "$FRR"
-                  if ! pv60_lz4leg_dec < "$FRD/raw/frame$FI.lz4" > "$FRC" 2>/dev/null; then PV60_FAIL="ramdisk frame $FI decode failed"; break; fi
+                  if ! pv60_frame_dec < "$FRD/raw/frame$FI.lz4" > "$FRC" 2>"$FRD/dec$FI.err"; then PV60_FAIL="ramdisk frame $FI decode failed (python codec): $(pv60_errtail "$FRD/dec$FI.err")"; break; fi
                   if ! pv60_newc_extract "$FRR" "$FRD/root$FI.records.json" < "$FRC"; then PV60_FAIL="ramdisk frame $FI cpio extract failed"; break; fi
                   echo "posture: ramdisk.img frame $FI top-level listing (names only):"
                   ls -A "$FRR" 2>/dev/null | while IFS= read -r PV60_N; do echo "posture:   ramdisk frame $FI top: $PV60_N"; done
@@ -678,7 +728,7 @@ jobs:
                   if [ -f "$FRD/hascand$FI" ]; then
                     pv60_newc_setup
                     if ! python3 "$PV60_CPIOPY" repack "$FRD/root$FI" "$FRD/root$FI.records.json" > "$FRD/new$FI.cpio"; then PV60_FAIL="ramdisk frame $FI repack failed"; break; fi
-                    if ! pv60_lz4leg_enc < "$FRD/new$FI.cpio" > "$FRD/new$FI.lz4"; then PV60_FAIL="ramdisk frame $FI re-encode failed"; break; fi
+                    if ! pv60_frame_enc < "$FRD/new$FI.cpio" > "$FRD/new$FI.lz4" 2>"$FRD/enc$FI.err"; then PV60_FAIL="ramdisk frame $FI re-encode failed (python codec): $(pv60_errtail "$FRD/enc$FI.err")"; break; fi
                     if [ "$(cat "$FRD/raw/frame$FI.term")" = "0" ]; then
                       if [ "$(tail -c 4 "$FRD/new$FI.lz4" | od -An -tx1 | tr -d ' \n')" = "00000000" ]; then
                         truncate -s -4 "$FRD/new$FI.lz4"
@@ -738,7 +788,7 @@ jobs:
                   FI=0
                   while [ "$FI" -lt "${NVF:-0}" ]; do
                     VRR="$VFD/root$FI"; mkdir -p "$VRR"
-                    if ! pv60_lz4leg_dec < "$VFD/raw/frame$FI.lz4" > "$VFD/frame$FI.cpio" 2>/dev/null; then PV60_FAIL="ramdisk verify frame $FI decode failed"; break; fi
+                    if ! pv60_frame_dec < "$VFD/raw/frame$FI.lz4" > "$VFD/frame$FI.cpio" 2>"$VFD/dec$FI.err"; then PV60_FAIL="ramdisk verify frame $FI decode failed (python codec): $(pv60_errtail "$VFD/dec$FI.err")"; break; fi
                     if ! pv60_newc_extract "$VRR" "$VFD/root$FI.records.json" < "$VFD/frame$FI.cpio"; then PV60_FAIL="ramdisk verify frame $FI extract failed"; break; fi
                     find "$VRR" -type f -name 'fstab.*' 2>/dev/null | sort > "$VFD/cand$FI.txt"
                     while IFS= read -r VF; do
@@ -763,7 +813,7 @@ jobs:
             1f8b*) RDFMT=gzip; gzip -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk gzip extract failed" ;;
             04224c41) RDFMT=lz4frame; if command -v lz4 >/dev/null 2>&1; then lz4 -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk lz4 extract failed"; else PV60_FAIL="ramdisk is lz4-frame but no lz4 tool exists on the runner"; fi ;;
             30373037) RDFMT=cpio; cp "$RD" "$RDTMP/rd.cpio" ;;
-            02214c18) RDFMT=lz4legacy; if pv60_lz4leg_setup; then pv60_lz4leg_dec < "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk lz4-legacy extract failed"; else PV60_FAIL="ramdisk is LZ4-legacy but no lz4 tooling could be obtained on the runner (no lz4 CLI, apt restore failed, no python3 lz4 module)"; fi ;;
+            02214c18) RDFMT=lz4legacy; if pv60_lz4leg_setup; then pv60_lz4leg_dec < "$RD" > "$RDTMP/rd.cpio" 2>"$RDTMP/rddec.err" || PV60_FAIL="ramdisk lz4-legacy extract failed (decoder): $(pv60_errtail "$RDTMP/rddec.err")"; else PV60_FAIL="ramdisk is LZ4-legacy but no lz4 tooling could be obtained on the runner (no lz4 CLI, apt restore failed, no python3 lz4 module)"; fi ;;
             *) PV60_FAIL="ramdisk.img format unrecognised (magic $RDMAGIC) - refusing to guess" ;;
           esac
           if [ -z "$PV60_FAIL" ]; then
