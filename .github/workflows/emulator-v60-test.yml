@@ -4559,13 +4559,23 @@ jobs:
                   if [ "$TS_OK" = "1" ]; then PV60_STATE=planted; echo "TESTSTATE PLANT: COMPLETE (sdcard marker + global setting + app, each read back) - the outgoing certificate will carry v60test_state=planted"; else PV60_STATE=absent; echo "TESTSTATE PLANT: INCOMPLETE - the outgoing certificate will carry v60test_state=absent and the next wake grades TESTSTATE: UNGRADED, never a false grade"; fi
                 fi
                 if [ -z "$W_FAIL" ]; then
-                  echo "-- V60-TEST ACCOUNT PHASE (r8): synthetic-account mechanism test, redesigned after the r7 live failure (run 43588335945: the phase's single unverified 'adb shell stop' + 'service check account' poll never saw the account service go away in 60s, so the plant aborted and the capsule sealed capsule_accounts=absent). r8 changes, confined to this phase: (1) the PLANT is HOST-SIDE - the probes are inserted into host copies of the account DBs and the planted copies are sealed into the capsule via a guest staging tree; the guest's canonical account DBs are NEVER written by the plant, so the plant does not depend on stopping the guest framework at all; (2) the CAPTURE's DB content comes from a primitive that is VERIFIED, not assumed - preferred: a guest-side sqlite3 VACUUM INTO snapshot (a transactionally consistent copy taken without stopping anything), fallback: a framework stop whose stoppage is proven by positive evidence (init.svc.zygote / init.svc.zygote_secondary / pidof system_server / service check account, all printed per poll) before any stopped-guest read; if neither primitive verifies, the phase fails closed exactly as r7 did (previous capsule kept, capsule_accounts=absent sealed, next wake grades UNGRADED - never a false grade); (3) the in-run control semantics are restated at the end of the phase - the probes are NOT expected in this run's own account listing. The grade remains the NEXT wake's ACCOUNT_PERSIST line --"
+                  echo "-- V60-TEST ACCOUNT PHASE (r9): synthetic-account mechanism test, capture replaced with the proven pull primitive after the r8 live failure (run 43592589184: BOTH r8 capture primitives failed - the guest sqlite snapshot open returned 'unable to open database file' rc=1 on both account DBs, and the verified-stop fallback never engaged because its stop ran unprivileged, 'Must be root'; probes again not planted, capsule_accounts=absent sealed, fail-closed held). r9 changes, confined to this phase: (1) the CAPTURE is the one primitive this project has used successfully on every wake since birth - the identity capsule's adb-root file pull: this phase re-establishes adb root IN THIS STEP and verifies uid=0 (step 17 runs after reboot 2 and inherits no root state; steps 14/15 root inside their own steps), then pulls the exact account file set as root and gates it with the host paircheck, re-pulling up to 3 times on a failed check before failing closed exactly as before; the r8 snapshot/stop ladder is REMOVED entirely - simpler is the fix (design section 13); (2) the PLANT is unchanged from r8 - host-side insertion of both probes into the verified pulled pair, sealed via the guest staging tree; (3) grading semantics unchanged - the next wake's ACCOUNT_PERSIST line, after capsule apply + reboot 2 --"
                   ACCTD="pv-acct"; rm -rf "$ACCTD"; mkdir -p "$ACCTD"
-                  ACCT_FAIL=""; ACCT_PRIM=""; ACCT_QUIESCE=""
+                  ACCT_FAIL=""; ACCT_PRIM=""; ACCT_ATTEMPT=0
+                  echo "-- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --"
+                  adb -s emulator-5554 root 2>&1; echo "adb_root_rc=$?"
+                  ACCT_ROOTED=""
+                  for i in 1 2 3 4 5 6; do
+                    IDOUT="$(adb -s emulator-5554 shell id 2>/dev/null | tr -d '\r')"
+                    echo "account capture root poll $i: id='$IDOUT'"
+                    case "$IDOUT" in *uid=0*) ACCT_ROOTED=1; break;; esac
+                    sleep 5
+                  done
+                  if [ "$ACCT_ROOTED" = "1" ]; then echo "ACCOUNT CAPTURE: adb root verified (uid=0 shell in this step)"; else ACCT_FAIL="adb root did not yield a uid=0 shell in this step - the adb-root pull cannot run; failing closed (previous capsule kept, capsule_accounts=absent)"; fi
                   echo "keystore probe (FIX-PLAN 2.4 - facts for the keystore question; the keystore is NOT carried by this capsule):"
                   adb -s emulator-5554 shell "ls /data/misc/keystore 2>&1; ls /data/misc/keystore/user_0 2>/dev/null | head -8" 2>&1 | head -14
                   echo "gms/gsf guest sizes:"; adb -s emulator-5554 shell "du -sm /data/data/com.google.android.gms /data/data/com.google.android.gsf" 2>&1
-                  adb -s emulator-5554 shell "stat -c '%n %u %g %a' /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db; ls -lZ /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db" > "$ACCTD/orig-stat.txt" 2>&1; cat "$ACCTD/orig-stat.txt"
+                  adb -s emulator-5554 shell "stat -c '%n %u %g %a' /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db /data/system/sync/accounts.xml; ls -lZ /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db" > "$ACCTD/orig-stat.txt" 2>&1; cat "$ACCTD/orig-stat.txt"
                   cat > pv60-acct.py <<'PV60ACCEOF'
           import sqlite3, sys
 
@@ -4720,60 +4730,40 @@ jobs:
                   print("PVACCT_RESULT: FAIL unknown mode %s" % mode)
                   sys.exit(2)
           PV60ACCEOF
-                  echo "-- account DB acquisition (r8): the capsule's account content starts from HOST copies obtained through a verified primitive. Preferred: guest-side sqlite3 VACUUM INTO - a transactionally consistent snapshot of each live DB, taken with the framework RUNNING (SQLite itself is the quiesce). Fallback: a framework stop that must PROVE itself stopped (positive init.svc + process + service-registry evidence, printed per poll) before the canonical DBs are pulled from the stopped guest. The r7 combination - one unverified stop + one servicemanager-registry poll - is retired: servicemanager is a separate init service that framework stop never touches, its registry is not a liveness read on zygote/system_server, and the r7 phase never re-issued its single stop nor read init.svc.zygote / pidof system_server at all (run 43588335945 burned the full 60s that way) --"
-                  GSQL="$(adb -s emulator-5554 shell "command -v sqlite3" 2>/dev/null | tr -d '\r')"
-                  if [ -n "$GSQL" ]; then echo "guest sqlite3 present: $GSQL ($(adb -s emulator-5554 shell "sqlite3 --version" 2>/dev/null | tr -d '\r' | head -1))"; else echo "guest sqlite3: NOT PRESENT on this guest - the VACUUM INTO primitive is unavailable, the verified-stop fallback is the only capture route"; fi
-                  if [ -n "$GSQL" ]; then
-                    adb -s emulator-5554 shell "rm -rf /data/local/tmp/pv-acctsnap; mkdir -p /data/local/tmp/pv-acctsnap" 2>&1
-                    adb -s emulator-5554 shell "sqlite3 /data/system_de/0/accounts_de.db \"VACUUM INTO '/data/local/tmp/pv-acctsnap/accounts_de.db'\"" 2>&1; echo "vacuum_into_de_rc=$?"
-                    adb -s emulator-5554 shell "sqlite3 /data/system_ce/0/accounts_ce.db \"VACUUM INTO '/data/local/tmp/pv-acctsnap/accounts_ce.db'\"" 2>&1; echo "vacuum_into_ce_rc=$?"
-                    adb -s emulator-5554 pull /data/local/tmp/pv-acctsnap/accounts_de.db "$ACCTD/accounts_de.db" 2>&1
-                    adb -s emulator-5554 pull /data/local/tmp/pv-acctsnap/accounts_ce.db "$ACCTD/accounts_ce.db" 2>&1
-                    if [ -s "$ACCTD/accounts_de.db" ] && [ -s "$ACCTD/accounts_ce.db" ]; then
-                      python3 pv60-acct.py paircheck "$ACCTD/accounts_de.db" "$ACCTD/accounts_ce.db" > "$ACCTD/paircheck.log" 2>&1; PRC=$?
-                      cat "$ACCTD/paircheck.log"
-                      if [ "$PRC" = "0" ]; then ACCT_PRIM="guest-sqlite3-vacuum-into"; else echo "VACUUM INTO snapshots pulled but the pair FAILED host paircheck rc=$PRC - not a capture; trying the verified-stop fallback"; rm -f "$ACCTD/accounts_de.db" "$ACCTD/accounts_ce.db"; fi
-                    else
-                      echo "VACUUM INTO snapshot pull failed or produced an empty file - trying the verified-stop fallback"
-                    fi
-                  fi
-                  if [ -z "$ACCT_PRIM" ]; then
-                    echo "-- verified-stop fallback: 'adb shell stop' is re-issued up to 3 times; stoppage is declared ONLY when ALL of these read stopped in the same poll: init.svc.zygote=stopped, no system_server process, and 'service check account' answering the exact string 'Service account: not found'. Every poll's evidence is printed - an unverified stop is treated as NO stop (the r7 lesson) --"
-                    for attempt in 1 2 3; do
-                      if [ -n "$ACCT_QUIESCE" ]; then break; fi
-                      adb -s emulator-5554 shell stop 2>&1; echo "framework stop attempt $attempt issued (rc=$?)"
-                      for i in 1 2 3 4; do
-                        ZSVC="$(adb -s emulator-5554 shell getprop init.svc.zygote 2>/dev/null | tr -d '\r')"
-                        ZSVC2="$(adb -s emulator-5554 shell getprop init.svc.zygote_secondary 2>/dev/null | tr -d '\r')"
-                        SSPID="$(adb -s emulator-5554 shell pidof system_server 2>/dev/null | tr -d '\r')"
-                        SCHK="$(adb -s emulator-5554 shell service check account 2>/dev/null | tr -d '\r')"
-                        echo "quiesce evidence attempt $attempt poll $i: init.svc.zygote='${ZSVC:-<empty>}' init.svc.zygote_secondary='${ZSVC2:-<empty>}' system_server_pid='${SSPID:-none}' service_check_account='${SCHK:-<no answer>}'"
-                        if [ "$ZSVC" = "stopped" ] && [ -z "$SSPID" ] && printf '%s' "$SCHK" | grep -qF 'Service account: not found'; then ACCT_QUIESCE="verified"; echo "quiesce VERIFIED at attempt $attempt poll $i - the framework is provably stopped"; break; fi
-                        sleep 5
-                      done
+                  echo "-- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). The r8 ladder is removed: no guest-side snapshot open, no framework stop anywhere in the account path. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present), /data/system/sync/accounts.xml when present, and the GSF/GMS whole dirs, which ride the guest staging tar at assembly below exactly as r7/r8 defined them (a plain tree pull does not preserve uid/gid/mode; the root tar does - it is the identity capsule's own tree method, pulled by adb like every capsule). Consistency argument: capture runs on an idle, settled guest (post-verdict, post-plants, no enrolment in flight); DB + wal + shm pulled as one set replay coherently on host open; the host PAIRCHECK (sqlite integrity_check + DE/CE (id,name,type) identity) is the verification gate - a torn pull fails the check and is re-pulled, never sealed --"
+                  while [ -z "$ACCT_FAIL" ] && [ -z "$ACCT_PRIM" ] && [ "$ACCT_ATTEMPT" -lt 3 ]; do
+                    ACCT_ATTEMPT=$((ACCT_ATTEMPT+1))
+                    PULLD="$ACCTD/pull"; rm -rf "$PULLD"; mkdir -p "$PULLD"
+                    echo "-- adb-root pull attempt $ACCT_ATTEMPT of 3 --"
+                    adb -s emulator-5554 pull /data/system_de/0/accounts_de.db "$PULLD/accounts_de.db" 2>&1
+                    adb -s emulator-5554 pull /data/system_ce/0/accounts_ce.db "$PULLD/accounts_ce.db" 2>&1
+                    for R9S in -wal -shm; do
+                      if adb -s emulator-5554 shell "ls /data/system_de/0/accounts_de.db$R9S" >/dev/null 2>&1; then adb -s emulator-5554 pull "/data/system_de/0/accounts_de.db$R9S" "$PULLD/accounts_de.db$R9S" 2>&1; fi
+                      if adb -s emulator-5554 shell "ls /data/system_ce/0/accounts_ce.db$R9S" >/dev/null 2>&1; then adb -s emulator-5554 pull "/data/system_ce/0/accounts_ce.db$R9S" "$PULLD/accounts_ce.db$R9S" 2>&1; fi
                     done
-                    if [ "$ACCT_QUIESCE" = "verified" ]; then
-                      adb -s emulator-5554 shell "ls /data/system_de/0/ /data/system_ce/0/" 2>&1 | tee "$ACCTD/db-dir-listing.txt"
-                      adb -s emulator-5554 pull /data/system_de/0/accounts_de.db "$ACCTD/accounts_de.db" 2>&1
-                      adb -s emulator-5554 pull /data/system_ce/0/accounts_ce.db "$ACCTD/accounts_ce.db" 2>&1
-                      for R8S in -wal -shm; do
-                        if adb -s emulator-5554 shell "ls /data/system_de/0/accounts_de.db$R8S" >/dev/null 2>&1; then adb -s emulator-5554 pull "/data/system_de/0/accounts_de.db$R8S" "$ACCTD/accounts_de.db$R8S" 2>&1; fi
-                        if adb -s emulator-5554 shell "ls /data/system_ce/0/accounts_ce.db$R8S" >/dev/null 2>&1; then adb -s emulator-5554 pull "/data/system_ce/0/accounts_ce.db$R8S" "$ACCTD/accounts_ce.db$R8S" 2>&1; fi
-                      done
-                      if [ -s "$ACCTD/accounts_de.db" ] && [ -s "$ACCTD/accounts_ce.db" ]; then
-                        python3 pv60-acct.py paircheck "$ACCTD/accounts_de.db" "$ACCTD/accounts_ce.db" > "$ACCTD/paircheck.log" 2>&1; PRC=$?
-                        cat "$ACCTD/paircheck.log"
-                        if [ "$PRC" = "0" ]; then ACCT_PRIM="verified-framework-stop"; else ACCT_FAIL="stopped-guest DB pull FAILED host paircheck rc=$PRC - not a capture"; fi
-                      else
-                        ACCT_FAIL="stopped-guest account DB pull failed or produced an empty file"
-                      fi
+                    ACCT_SYNC="absent"
+                    if adb -s emulator-5554 shell "ls /data/system/sync/accounts.xml" >/dev/null 2>&1; then adb -s emulator-5554 pull /data/system/sync/accounts.xml "$PULLD/accounts.xml" 2>&1; if [ -s "$PULLD/accounts.xml" ]; then ACCT_SYNC="present"; fi; else echo "sync/accounts.xml: absent on this guest (no sync state yet) - not carried by this capture"; fi
+                    if [ ! -s "$PULLD/accounts_de.db" ] || [ ! -s "$PULLD/accounts_ce.db" ]; then
+                      echo "ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt $ACCT_ATTEMPT, paircheck FAIL - pull incomplete: a required DB is missing or empty)"
                     else
-                      ACCT_FAIL="capture unverified: VACUUM INTO snapshot unavailable or failed paircheck AND framework quiesce UNVERIFIED after 3 stop attempts (evidence printed above) - failing closed exactly as r7 did"
+                      python3 pv60-acct.py paircheck "$PULLD/accounts_de.db" "$PULLD/accounts_ce.db" > "$ACCTD/paircheck-attempt$ACCT_ATTEMPT.log" 2>&1; PRC=$?
+                      cat "$ACCTD/paircheck-attempt$ACCT_ATTEMPT.log"
+                      if [ "$PRC" = "0" ]; then
+                        echo "ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt $ACCT_ATTEMPT, paircheck OK - integrity ok on both DBs, DE/CE (id,name,type) rows identical)"
+                        cp "$PULLD/accounts_de.db" "$ACCTD/accounts_de.db"; cp "$PULLD/accounts_ce.db" "$ACCTD/accounts_ce.db"
+                        for R9S in -wal -shm; do if [ -f "$PULLD/accounts_de.db$R9S" ]; then cp "$PULLD/accounts_de.db$R9S" "$ACCTD/accounts_de.db$R9S"; fi; if [ -f "$PULLD/accounts_ce.db$R9S" ]; then cp "$PULLD/accounts_ce.db$R9S" "$ACCTD/accounts_ce.db$R9S"; fi; done
+                        if [ "$ACCT_SYNC" = "present" ]; then cp "$PULLD/accounts.xml" "$ACCTD/accounts.xml"; fi
+                        ACCT_PRIM="adb-root-pull"
+                      else
+                        echo "ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt $ACCT_ATTEMPT, paircheck FAIL rc=$PRC - torn or inconsistent pair; re-pulling)"
+                      fi
                     fi
-                  fi
-                  if [ -z "$ACCT_FAIL" ]; then echo "ACCOUNT CAPTURE PRIMITIVE: $ACCT_PRIM (the DB copies in $ACCTD passed host paircheck: integrity ok, DE/CE account rows identical)"; fi
+                    if [ -z "$ACCT_PRIM" ] && [ "$ACCT_ATTEMPT" -lt 3 ]; then sleep 5; fi
+                  done
+                  if [ -z "$ACCT_FAIL" ] && [ -z "$ACCT_PRIM" ]; then ACCT_FAIL="adb-root-pull capture did not verify on any of 3 attempts (per-attempt paircheck verdicts printed above) - failing closed exactly as r7/r8 did"; fi
+                  if [ -n "$ACCT_PRIM" ]; then echo "ACCOUNT CAPTURE: verified via $ACCT_PRIM on attempt $ACCT_ATTEMPT (the DB copies in $ACCTD passed host paircheck; sync/accounts.xml: $ACCT_SYNC)"; fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    echo "-- host-side plant (r8): the two probes are inserted into the HOST copies only, mirroring AMS's own insert order (CE row first, DE row with the SAME id, dummy CE authtoken for the google-type probe). Nothing is pushed back to the guest's canonical DB paths in this design - the planted copies reach the next wake exclusively through the capsule --"
+                    echo "-- host-side plant (r9, unchanged from r8): the two probes are inserted into the HOST copies only, mirroring AMS's own insert order (CE row first, DE row with the SAME id, dummy CE authtoken for the google-type probe). Nothing is pushed back to the guest's canonical DB paths in this design - the planted copies reach the next wake exclusively through the capsule --"
                     python3 pv60-acct.py insert "$ACCTD/accounts_de.db" "$ACCTD/accounts_ce.db" > "$ACCTD/insert.log" 2>&1; ACCT_RC=$?
                     cat "$ACCTD/insert.log"
                     if [ "$ACCT_RC" != "0" ]; then ACCT_FAIL="synthetic insert tool rc=$ACCT_RC (log above)"; fi
@@ -4783,35 +4773,39 @@ jobs:
                     DEUID="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; DEGID="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; DEMODE="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
                     CEUID="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; CEGID="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; CEMODE="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
                     if ! printf '%s' "$DEUID$DEGID$DEMODE$CEUID$CEGID$CEMODE" | grep -qx '[0-9][0-9]*'; then ACCT_FAIL="original ownership/mode not parseable from the stat capture"; fi
+                    SYUID="$(grep 'accounts.xml ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; SYGID="$(grep 'accounts.xml ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; SYMODE="$(grep 'accounts.xml ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
+                    if [ -z "$ACCT_FAIL" ] && [ "$ACCT_SYNC" = "present" ] && ! printf '%s' "$SYUID$SYGID$SYMODE" | grep -qx '[0-9][0-9]*'; then ACCT_FAIL="sync/accounts.xml ownership/mode not parseable from the stat capture"; fi
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    echo "-- capsule assembly (r8): the extended capsule is tarred in the guest from a STAGING TREE, so the planted DB copies enter the capsule without ever touching the canonical DB paths: planted DBs are pushed to staging paths only, given the canonical files' recorded uid/gid/mode there, and the identity + sync + GSF + GMS payload is copied alongside (under the verified-stop primitive the framework is still stopped during the copy; under VACUUM INTO the copy is live - the DB pair, the graded content, is snapshot-consistent either way, and the big-dir live-copy caveat is the same one the r7 design accepted for its tar) --"
+                    echo "-- capsule assembly (r9): the extended capsule is tarred in the guest from a STAGING TREE, so the planted DB copies enter the capsule without ever touching the canonical DB paths: planted DBs are pushed to staging paths only, given the canonical files' recorded uid/gid/mode there, and the identity + sync + GSF + GMS payload is copied alongside - the copy is live (the framework is never stopped in r9), the DB pair - the graded content - is the paircheck-verified pull, and the big-dir live-copy caveat is the same one the r7 design accepted for its tar --"
                     STG="/data/local/tmp/pv-capstage"; MKDIRP="${MARKER_GUEST%/*}"
                     adb -s emulator-5554 shell "rm -rf $STG /data/local/tmp/pv-capsule.tar; mkdir -p $STG/data/system_de/0 $STG/data/system_ce/0 $STG/data/system/users/0 $STG/data/system/sync $STG/data/data $STG$MKDIRP" 2>&1
                     adb -s emulator-5554 push "$ACCTD/accounts_de.db" "$STG/data/system_de/0/accounts_de.db" 2>&1
                     adb -s emulator-5554 push "$ACCTD/accounts_ce.db" "$STG/data/system_ce/0/accounts_ce.db" 2>&1
-                    adb -s emulator-5554 shell "chown $DEUID:$DEGID $STG/data/system_de/0/accounts_de.db; chmod $DEMODE $STG/data/system_de/0/accounts_de.db; chown $CEUID:$CEGID $STG/data/system_ce/0/accounts_ce.db; chmod $CEMODE $STG/data/system_ce/0/accounts_ce.db; cp -a /data/system/users/0/settings_secure.xml $STG/data/system/users/0/settings_secure.xml; cp -a $MARKER_GUEST $STG$MARKER_GUEST; cp -a /data/system/sync/accounts.xml $STG/data/system/sync/accounts.xml; cp -a /data/data/com.google.android.gsf $STG/data/data/com.google.android.gsf; cp -a /data/data/com.google.android.gms $STG/data/data/com.google.android.gms; ls -lZ $STG/data/system_de/0/accounts_de.db $STG/data/system_ce/0/accounts_ce.db" 2>&1
+                    adb -s emulator-5554 shell "chown $DEUID:$DEGID $STG/data/system_de/0/accounts_de.db; chmod $DEMODE $STG/data/system_de/0/accounts_de.db; chown $CEUID:$CEGID $STG/data/system_ce/0/accounts_ce.db; chmod $CEMODE $STG/data/system_ce/0/accounts_ce.db; cp -a /data/system/users/0/settings_secure.xml $STG/data/system/users/0/settings_secure.xml; cp -a $MARKER_GUEST $STG$MARKER_GUEST; cp -a /data/data/com.google.android.gsf $STG/data/data/com.google.android.gsf; cp -a /data/data/com.google.android.gms $STG/data/data/com.google.android.gms; ls -lZ $STG/data/system_de/0/accounts_de.db $STG/data/system_ce/0/accounts_ce.db" 2>&1
+                    if [ "$ACCT_SYNC" = "present" ]; then adb -s emulator-5554 push "$ACCTD/accounts.xml" "$STG/data/system/sync/accounts.xml" 2>&1; adb -s emulator-5554 shell "chown $SYUID:$SYGID $STG/data/system/sync/accounts.xml; chmod $SYMODE $STG/data/system/sync/accounts.xml" 2>&1; fi
                     adb -s emulator-5554 shell "tar -cf /data/local/tmp/pv-capsule.tar -C $STG data" 2>&1; echo "extended_capsule_tar_rc=$?"
-                    rm -rf pv-capsule-r8; mkdir -p pv-capsule-r8
-                    adb -s emulator-5554 pull /data/local/tmp/pv-capsule.tar pv-capsule-r8/pv-capsule.tar 2>&1
-                    if [ ! -s pv-capsule-r8/pv-capsule.tar ]; then ACCT_FAIL="extended capsule pull failed or empty"; fi
+                    rm -rf pv-capsule-r9; mkdir -p pv-capsule-r9
+                    adb -s emulator-5554 pull /data/local/tmp/pv-capsule.tar pv-capsule-r9/pv-capsule.tar 2>&1
+                    if [ ! -s pv-capsule-r9/pv-capsule.tar ]; then ACCT_FAIL="extended capsule pull failed or empty"; fi
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    CAPLIST8="$(tar -tf pv-capsule-r8/pv-capsule.tar 2>&1)"; printf '%s\n' "$CAPLIST8" | head -30
-                    for R8NEED in settings_secure.xml accounts_de.db accounts_ce.db sync/accounts.xml databases/gservices.db; do
-                      if ! printf '%s\n' "$CAPLIST8" | grep -q "$R8NEED"; then ACCT_FAIL="extended capsule tar is missing $R8NEED"; fi
+                    CAPLIST9="$(tar -tf pv-capsule-r9/pv-capsule.tar 2>&1)"; printf '%s\n' "$CAPLIST9" | head -30
+                    for R9NEED in settings_secure.xml accounts_de.db accounts_ce.db databases/gservices.db; do
+                      if ! printf '%s\n' "$CAPLIST9" | grep -q "$R9NEED"; then ACCT_FAIL="extended capsule tar is missing $R9NEED"; fi
                     done
-                    if ! printf '%s\n' "$CAPLIST8" | grep -q 'com.google.android.gms/'; then ACCT_FAIL="extended capsule tar carries no GMS directory entries"; fi
+                    if [ "$ACCT_SYNC" = "present" ] && ! printf '%s\n' "$CAPLIST9" | grep -q 'sync/accounts.xml'; then ACCT_FAIL="extended capsule tar is missing sync/accounts.xml (present at capture)"; fi
+                    if ! printf '%s\n' "$CAPLIST9" | grep -q 'com.google.android.gms/'; then ACCT_FAIL="extended capsule tar carries no GMS directory entries"; fi
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
                     rm -rf "$ACCTD/verify"; mkdir -p "$ACCTD/verify"
-                    tar -xf pv-capsule-r8/pv-capsule.tar -C "$ACCTD/verify" data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db 2>&1
+                    tar -xf pv-capsule-r9/pv-capsule.tar -C "$ACCTD/verify" data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db 2>&1
                     python3 pv60-acct.py verify "$ACCTD/verify/data/system_de/0/accounts_de.db" "$ACCTD/verify/data/system_ce/0/accounts_ce.db" > "$ACCTD/verify.log" 2>&1; VRC=$?
                     cat "$ACCTD/verify.log"
                     if [ "$VRC" != "0" ]; then ACCT_FAIL="host verification of the captured capsule failed rc=$VRC"; fi
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    NEWCAPSHA="$(sha256sum pv-capsule-r8/pv-capsule.tar | awk '{print $1}')"
+                    NEWCAPSHA="$(sha256sum pv-capsule-r9/pv-capsule.tar | awk '{print $1}')"
                     {
                       echo "capsule_format=phonevault-identity-capsule-v3"
                       echo "android_id=$CID"
@@ -4820,30 +4814,19 @@ jobs:
                       echo "capsule_sha256=$NEWCAPSHA"
                       echo "settings_secure_md5_birth=$CMD5"
                       echo "capsule_accounts=planted"
-                      echo "capsule_files=settings_secure.xml + marker + accounts_de.db + accounts_ce.db + sync/accounts.xml + gsf dir + gms dir (r8 extended capsule, host-side plant via staging tree)"
-                    } > pv-capsule-r8/capsule-manifest.txt
-                    cp pv-capsule-r8/pv-capsule.tar "$AVDDIR/pv-capsule.tar"
-                    cp pv-capsule-r8/capsule-manifest.txt "$AVDDIR/capsule-manifest.txt"
+                      echo "capsule_files=settings_secure.xml + marker + accounts_de.db + accounts_ce.db + sync/accounts.xml + gsf dir + gms dir (r9 extended capsule, adb-root-pull capture, host-side plant via staging tree)"
+                    } > pv-capsule-r9/capsule-manifest.txt
+                    cp pv-capsule-r9/pv-capsule.tar "$AVDDIR/pv-capsule.tar"
+                    cp pv-capsule-r9/capsule-manifest.txt "$AVDDIR/capsule-manifest.txt"
                     PV40_ACCT=planted
                     echo "ACCOUNT PHASE: extended capsule assembled via the guest staging tree and host-verified (both probes present in the sealed DBs, ids matched across DE/CE; capture primitive: $ACCT_PRIM) - the outgoing pack carries capsule_accounts=planted and capsule_sha256=$NEWCAPSHA; graded by the NEXT wake"
                   else
                     echo "ACCOUNT PHASE: FAILED - $ACCT_FAIL; the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent (the next wake grades ACCOUNT_PERSIST: UNGRADED, never a false NO)"
                   fi
-                  if [ "$ACCT_QUIESCE" = "verified" ]; then
-                    adb -s emulator-5554 shell start 2>&1; echo "framework_start_rc=$?"
-                    BACK=""
-                    for i in $(seq 1 36); do
-                      SCHK2="$(adb -s emulator-5554 shell service check account 2>/dev/null | tr -d '\r')"
-                      if printf '%s' "$SCHK2" | grep -qF 'Service account: found'; then BACK=1; echo "account service back at poll $i ('$SCHK2')"; break; fi
-                      sleep 5
-                    done
-                    if [ "$BACK" != "1" ]; then echo "ACCOUNT PHASE CONTROL: account service did not return within 3 min of framework start - post-capture control read skipped"; fi
-                  else
-                    echo "framework was never stopped in this run (capture primitive: ${ACCT_PRIM:-none}) - no restart to perform or prove"
-                  fi
+                  echo "framework was never stopped in this run (capture primitive: adb-root-pull; the r8 snapshot/stop ladder was removed in r9) - no restart to perform or prove"
                   DUMPCTL="$(adb -s emulator-5554 shell dumpsys account 2>/dev/null | tr -d '\r')"
                   printf '%s\n' "$DUMPCTL" | grep -F 'Account {' | head -20
-                  echo "ACCOUNT PHASE CONTROL (r8 semantics, restated): the probes are NOT expected in the listing above - the plant is host-side, the guest's canonical account DBs were never written, and this run's AMS can only serve what it booted with. The in-run control for the plant is the host verification of the SEALED capsule above; the cross-wake control - what the NEXT wake's AMS does with the planted DBs after capsule apply + reboot 2 - is exactly that wake's ACCOUNT_PERSIST grade. An in-run probe listing is therefore neither expected nor required in r8 (this replaces the r7 control, which conflated insertion-acceptance with transport)"
+                  echo "ACCOUNT PHASE CONTROL (r9 semantics, restated): the probes are NOT expected in the listing above - the plant is host-side, the guest's canonical account DBs were never written, and this run's AMS can only serve what it booted with. The in-run control for the plant is the host verification of the SEALED capsule above; the cross-wake control - what the NEXT wake's AMS does with the planted DBs after capsule apply + reboot 2 - is exactly that wake's ACCOUNT_PERSIST grade. An in-run probe listing is therefore neither expected nor required in r9 (this replaces the r7 control, which conflated insertion-acceptance with transport)"
                 fi
                 rt4_stop
                 if [ -n "$W_FAIL" ]; then
