@@ -84,6 +84,14 @@ on:
         type: string
         default: ""
         required: false
+      seat_app:
+        description: "wake mode only (v6.4): 'aurora' = step 14a side-loads Aurora Store 4.8.4 (F-Droid repo build, package com.aurora.store) BEFORE the live window opens, so an app store is already on the phone when the window opens and the seating target can be fetched inside the window through it. The APK is downloaded from f-droid.org at run time and its sha256 is verified against the pin in step 14a (the hash in F-Droid's signed repo index for that exact file, desk-verified 2026-11-14, job #13) BEFORE install - a mismatch is skipped, never installed, and the install outcome never touches the identity verdict. 'none' (default) = no seat side-load; behaviour is then identical to v6.3"
+        type: choice
+        options:
+          - none
+          - aurora
+        default: none
+        required: false
   push:
     branches: [main]
     paths:
@@ -4170,6 +4178,60 @@ jobs:
           if [ "$MODE" = "wake" ] && [ -s "$WVERD" ]; then cp "$WVERD" "$EVID/identity-verdict.txt"; cp "$EVID/identity-verdict.txt" .pv-evidence-final/ 2>/dev/null; fi
           echo "production wake part 1 evidence merged into .pv-evidence-final"
 
+      - name: PhoneVault step 14a of 15 - seat app side-load before the live window (v6.4, wake mode only)
+        env:
+          PV_SEAT: ${{ inputs.seat_app }}
+        run: |
+          set +e
+          EVID=.pv-evidence
+          mkdir -p "$EVID"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          MODE="${MODE:-$(cat .pv-mode.txt 2>/dev/null | tr -d '\r\n')}"
+          if [ -z "$MODE" ]; then MODE="fresh"; fi
+          SECS="$EVID/07b1-seat.txt"; : > "$SECS"
+          WSTATE="$EVID/pv40-wake-state.txt"
+          SEAT="${PV_SEAT:-none}"
+          {
+            echo "===== 07b1 seat app side-load (v6.4): ONE extra app installed BEFORE the live window opens, so the seating target can be fetched inside the window ====="
+            if [ "$MODE" != "wake" ]; then
+              echo "mode=$MODE - seat side-load not applicable (wake mode only)"
+            elif [ ! -f "$WSTATE" ] || ! grep -q 'WAKE_STATE=PENDING' "$WSTATE" 2>/dev/null; then
+              echo "no pending wake state from part 1 - seat side-load skipped"
+            elif [ "$SEAT" != "aurora" ]; then
+              echo "SEAT: SKIPPED - seat_app=$SEAT at dispatch (only 'aurora' installs)"
+            else
+              SEAT_URL="https://f-droid.org/repo/com.aurora.store_76.apk"
+              SEAT_SHA="fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11"
+              SEAT_PKG="com.aurora.store"
+              SEAT_FILE="aurora-store-4.8.4.apk"
+              SEATDIR="$EVID/seat"; mkdir -p "$SEATDIR"
+              echo "-- seat app: Aurora Store 4.8.4 (versionCode 76), F-Droid repo build - the sha256 pin is the hash in F-Droid's signed repo index (index-v2) for this exact file, desk-verified 2026-11-14 (job #13); the download is verified BEFORE install and a mismatch is skipped, never installed (the step-15 manifest discipline, one app, before the window); the outcome never touches the identity verdict --"
+              curl -fSL --max-time 300 -o "$SEATDIR/$SEAT_FILE" "$SEAT_URL" 2>&1 | tail -2
+              if [ ! -s "$SEATDIR/$SEAT_FILE" ]; then
+                echo "SEAT: FAILED $SEAT_PKG - download produced no file from $SEAT_URL"
+              else
+                GOTSHA="$(sha256sum "$SEATDIR/$SEAT_FILE" | awk '{print $1}')"
+                if [ "$GOTSHA" != "$SEAT_SHA" ]; then
+                  echo "SEAT: HASH MISMATCH $SEAT_PKG - index sha256=$SEAT_SHA vs downloaded sha256=$GOTSHA - NOT installed"
+                else
+                  echo "seat download hash verified: sha256=$GOTSHA matches the F-Droid index pin"
+                  timeout 300 adb -s emulator-5554 install -r "$SEATDIR/$SEAT_FILE" 2>&1; echo "adb_install_rc=$? ($SEAT_FILE)"
+                  PKGS="$(adb -s emulator-5554 shell pm list packages 2>/dev/null | tr -d '\r')"
+                  if grep -qx "package:$SEAT_PKG" <<< "$PKGS"; then
+                    echo "SEAT: INSTALLED $SEAT_PKG ($SEAT_FILE sha256=$GOTSHA) - present BEFORE the live window opens"
+                  else
+                    echo "SEAT: FAILED $SEAT_PKG - adb install ran but the package is not present"
+                  fi
+                fi
+              fi
+            fi
+          } > "$SECS" 2>&1
+          cat "$SECS"
+          mkdir -p .pv-evidence-final
+          cp "$SECS" .pv-evidence-final/ 2>/dev/null
+          echo "seat side-load evidence merged into .pv-evidence-final"
       - name: PhoneVault step 14b of 15 - production wake live window + steady egress (v5.1, wake mode only)
         env:
           PV1_EP: ${{ secrets.PV_PROXY_ENDPOINT }}
@@ -4835,33 +4897,33 @@ jobs:
                     printf '%s\n' "$CAPLISTF" | head -30
                     echo "merged capsule listing: $(printf '%s\n' "$CAPLISTF" | wc -l) entries in total"
                     CAPMANIFEST="pv-capsule-acct/capsule-manifest.txt"
-                    # PROD TABLE BEGIN - the STRICT full-table completeness check, kept between these markers: the production fixture extracts this block from the built workflow and exercises it against fixture merges. Inputs: CAPLISTF (merged tar listing), CAPLISTIN (incoming tar listing), CAPMANIFEST (outgoing manifest path), ACCT_SYNC, GSF_SRC, GMS_SRC, ACCT_FAIL. Semantics (design sections 15 + 16): EVERY expected item is printed with present/absent AND origin; identity rows must appear in BOTH listings (their origin is proven, not asserted); there are NO conditional rows and NO exceptions in production - sync/accounts.xml, the GSF entries, gservices.db and the GMS entries are required unconditionally, and a documented guest absence of any of them is itself a seal failure (PROD-R10-DELTA section 2); ALL missing required items are collected and named in ONE verdict + ONE ACCT_FAIL.
+                    # PROD TABLE BEGIN - the STRICT full-table completeness check, kept between these markers: Membership tests read the listing variables via herestrings (grep <<< "$CAPLIST"), NEVER via a printf|grep pipeline: with pipefail set, grep -q exits on first match, the producer dies of SIGPIPE (141) and the pipeline reports NOT-FOUND for items that are present - the v4.1 APP false negative (STATE.md) and the run #69 table failure are this exact defect. the production fixture extracts this block from the built workflow and exercises it against fixture merges. Inputs: CAPLISTF (merged tar listing), CAPLISTIN (incoming tar listing), CAPMANIFEST (outgoing manifest path), ACCT_SYNC, GSF_SRC, GMS_SRC, ACCT_FAIL. Semantics (design sections 15 + 16): EVERY expected item is printed with present/absent AND origin; identity rows must appear in BOTH listings (their origin is proven, not asserted); there are NO conditional rows and NO exceptions in production - sync/accounts.xml, the GSF entries, gservices.db and the GMS entries are required unconditionally, and a documented guest absence of any of them is itself a seal failure (PROD-R10-DELTA section 2); ALL missing required items are collected and named in ONE verdict + ONE ACCT_FAIL.
                     PROD_MISSING=""
                     for PRODID in "settings_secure.xml data/system/users/0/settings_secure.xml" "phonevault-marker.txt data/local/tmp/phonevault-marker.txt"; do
                       PRODLBL="${PRODID%% *}"; PRODPAT="${PRODID#* }"; PRODIN=0; PRODMG=0
-                      if printf '%s\n' "$CAPLISTIN" | grep -qx "$PRODPAT"; then PRODIN=1; fi
-                      if printf '%s\n' "$CAPLISTF" | grep -qx "$PRODPAT"; then PRODMG=1; fi
+                      if grep -qx "$PRODPAT" <<< "$CAPLISTIN"; then PRODIN=1; fi
+                      if grep -qx "$PRODPAT" <<< "$CAPLISTF"; then PRODMG=1; fi
                       if [ "$PRODIN" = "1" ] && [ "$PRODMG" = "1" ]; then echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | PRESENT | origin: incoming-capsule"; else echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | MISSING (in incoming listing: $PRODIN, in merged listing: $PRODMG) | origin: incoming-capsule"; PROD_MISSING="$PROD_MISSING $PRODLBL"; fi
                     done
                     for PRODDB in "accounts_de.db data/system_de/0/accounts_de.db" "accounts_ce.db data/system_ce/0/accounts_ce.db"; do
                       PRODLBL="${PRODDB%% *}"; PRODPAT="${PRODDB#* }"
-                      if printf '%s\n' "$CAPLISTF" | grep -qx "$PRODPAT"; then echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | MISSING | origin: phase-staged"; PROD_MISSING="$PROD_MISSING $PRODLBL"; fi
+                      if grep -qx "$PRODPAT" <<< "$CAPLISTF"; then echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | MISSING | origin: phase-staged"; PROD_MISSING="$PROD_MISSING $PRODLBL"; fi
                     done
                     if [ -s "$CAPMANIFEST" ]; then echo "ACCOUNT CAPSULE TABLE: capsule-manifest.txt | $CAPMANIFEST (outgoing, beside the capsule tar) | PRESENT | origin: phase-staged (identity values carried from the incoming capsule)"; else echo "ACCOUNT CAPSULE TABLE: capsule-manifest.txt | $CAPMANIFEST (outgoing, beside the capsule tar) | MISSING | origin: phase-staged"; PROD_MISSING="$PROD_MISSING capsule-manifest.txt"; fi
                     if [ "$ACCT_SYNC" = "present" ]; then
-                      if printf '%s\n' "$CAPLISTF" | grep -qx 'data/system/sync/accounts.xml'; then echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (present at capture - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING sync/accounts.xml"; fi
+                      if grep -qx 'data/system/sync/accounts.xml' <<< "$CAPLISTF"; then echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (present at capture - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING sync/accounts.xml"; fi
                     else
                       echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (absent at capture - on an enrolled production guest the sync state is part of the required account set; seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING sync/accounts.xml"
                     fi
                     if [ "$GSF_SRC" = "present" ]; then
-                      if printf '%s\n' "$CAPLISTF" | grep -q 'data/data/com.google.android.gsf/'; then echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | MISSING (source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gsf-entries"; fi
-                      if printf '%s\n' "$CAPLISTF" | grep -q 'databases/gservices.db'; then echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | MISSING (GSF source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gservices.db"; fi
+                      if grep -q 'data/data/com.google.android.gsf/' <<< "$CAPLISTF"; then echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | MISSING (source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gsf-entries"; fi
+                      if grep -q 'databases/gservices.db' <<< "$CAPLISTF"; then echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | MISSING (GSF source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gservices.db"; fi
                     else
                       echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | MISSING (GSF source dir ABSENT on an enrolled production guest - seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gsf-entries"
                       echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | MISSING (GSF source dir ABSENT on an enrolled production guest - seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gservices.db"
                     fi
                     if [ "$GMS_SRC" = "present" ]; then
-                      if printf '%s\n' "$CAPLISTF" | grep -q 'data/data/com.google.android.gms/'; then echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | MISSING (source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gms-entries"; fi
+                      if grep -q 'data/data/com.google.android.gms/' <<< "$CAPLISTF"; then echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | MISSING (source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gms-entries"; fi
                     else
                       echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | MISSING (GMS source dir ABSENT on an enrolled production guest - seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gms-entries"
                     fi
