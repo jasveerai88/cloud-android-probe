@@ -3604,6 +3604,7 @@ jobs:
               echo "datapersist_sentinel=${PV40_SENTINEL:-absent}"
               echo "userdata_posture=${PV_POSTURE:-unpatched}"
               echo "v60test_state=${PV60_STATE:-absent}"
+              echo "capsule_accounts=${PV40_ACCT:-absent}"
               echo "largest_userdata_file=$LARGEST"; echo "largest_userdata_size_bytes=$LARGEST_SIZE"; echo "largest_userdata_sha256=$SHA"
               for f in $LIST; do printf 'packed_file: %s %s bytes\n' "$f" "$(stat -c %s "$AVDDIR/$f")"; done
               echo "packed_file: phonevault-version.txt (this file)"
@@ -3923,6 +3924,7 @@ jobs:
                     CSES="$(sed -n 's/^session=//p' "$CERT" | tr -d '\r' | head -1)"
                     CSENT="$(sed -n 's/^datapersist_sentinel=//p' "$CERT" | tr -d '\r' | head -1)"
                     CTS60="$(sed -n 's/^v60test_state=//p' "$CERT" | tr -d '\r' | head -1)"
+                    CACCT="$(sed -n 's/^capsule_accounts=//p' "$CERT" | tr -d '\r' | head -1)"
                     CLF="$(sed -n 's/^largest_userdata_file=//p' "$CERT" | tr -d '\r' | head -1)"
                     CLS="$(sed -n 's/^largest_userdata_sha256=//p' "$CERT" | tr -d '\r' | head -1)"
                     case "$CSES" in ''|*[!0-9]*) CSES=1;; esac
@@ -3984,6 +3986,15 @@ jobs:
                               echo "-- apply the capsule as root (BEFORE identity is read for the verdict): push the capsule tar FROM THE PACK, extract at /, then settings put LAST so the settings provider's own write is the final word --"
                               adb -s emulator-5554 push "$AVDDIR/pv-capsule.tar" /data/local/tmp/pv-capsule-restore.tar 2>&1; echo "capsule_push_rc=$?"
                               adb -s emulator-5554 shell "tar -xf /data/local/tmp/pv-capsule-restore.tar -C /" 2>&1; echo "capsule_extract_rc=$?"
+                              echo "-- r7 apply hygiene: SELinux contexts for the placed account files (the capsule tar records no contexts) + removal of stale -wal/-shm/-journal siblings boot 1 created next to its fresh account DBs, for any sibling the capsule itself does not carry (a stale journal must never be replayed over the placed DBs) --"
+                              CAPLIST_R7="$(tar -tf "$AVDDIR/pv-capsule.tar" 2>/dev/null)"
+                              for R7P in data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db; do
+                                for R7S in -wal -shm -journal; do
+                                  if ! printf '%s\n' "$CAPLIST_R7" | grep -qx "$R7P$R7S"; then adb -s emulator-5554 shell "rm -f /$R7P$R7S" 2>&1; fi
+                                done
+                              done
+                              adb -s emulator-5554 shell "restorecon /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db /data/system/sync/accounts.xml 2>/dev/null; timeout 120 restorecon -R /data/data/com.google.android.gsf /data/data/com.google.android.gms 2>/dev/null; echo r7_restorecon_done" 2>&1
+                              adb -s emulator-5554 shell "ls -lZ /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db /data/system/sync/accounts.xml" 2>&1
                               adb -s emulator-5554 shell settings put secure android_id "$CID" 2>&1; echo "settings_put_rc=$?"
                               POST_ID="$(adb -s emulator-5554 shell settings get secure android_id 2>/dev/null | tr -d '\r')"
                               POST_MARKER="$(adb -s emulator-5554 shell cat "$CMPATH" 2>/dev/null | tr -d '\r')"
@@ -4001,6 +4012,7 @@ jobs:
                                 echo "CSES=$CSES"
                                 echo "CSENT=$CSENT"
                                 echo "CTS60=$CTS60"
+                                echo "CACCT=$CACCT"
                                 echo "PRE_ID=$PRE_ID"
                                 echo "POST_ID=$POST_ID"
                                 echo "POST_MARKER=$POST_MARKER"
@@ -4343,6 +4355,7 @@ jobs:
               echo "datapersist_sentinel=${PV40_SENTINEL:-absent}"
               echo "userdata_posture=${PV_POSTURE:-unpatched}"
               echo "v60test_state=${PV60_STATE:-absent}"
+              echo "capsule_accounts=${PV40_ACCT:-absent}"
               echo "largest_userdata_file=$LARGEST"; echo "largest_userdata_size_bytes=$LARGEST_SIZE"; echo "largest_userdata_sha256=$SHA"
               for f in $LIST; do printf 'packed_file: %s %s bytes\n' "$f" "$(stat -c %s "$AVDDIR/$f")"; done
               echo "packed_file: phonevault-version.txt (this file)"
@@ -4392,6 +4405,7 @@ jobs:
               CSES="$(sed -n 's/^CSES=//p' "$WSTATE" | tr -d '\r' | head -1)"
               CSENT="$(sed -n 's/^CSENT=//p' "$WSTATE" | tr -d '\r' | head -1)"
               CTS60="$(sed -n 's/^CTS60=//p' "$WSTATE" | tr -d '\r' | head -1)"
+              CACCT="$(sed -n 's/^CACCT=//p' "$WSTATE" | tr -d '\r' | head -1)"
               PRE_ID="$(sed -n 's/^PRE_ID=//p' "$WSTATE" | tr -d '\r' | head -1)"
               POST_ID="$(sed -n 's/^POST_ID=//p' "$WSTATE" | tr -d '\r' | head -1)"
               POST_MARKER="$(sed -n 's/^POST_MARKER=//p' "$WSTATE" | tr -d '\r' | head -1)"
@@ -4481,6 +4495,23 @@ jobs:
                 FINAL_MARKER="$(adb -s emulator-5554 shell cat "$CMPATH" 2>/dev/null | tr -d '\r')"
                 echo "android_id_AFTER_reboot2=$FINAL_ID"
                 echo "marker_AFTER_reboot2 (${CMPATH})=$FINAL_MARKER"
+                echo "-- ACCOUNT-PERSIST GRADE (r7): the account list AMS serves AFTER capsule apply + the survival reboot; the expectation comes from the restored pack's certificate (capsule_accounts, host-verified at seal time) --"
+                DUMPACC="$(adb -s emulator-5554 shell dumpsys account 2>/dev/null | tr -d '\r')"
+                printf '%s\n' "$DUMPACC" | grep -F 'Account {' | head -20
+                P1F=ABSENT; P2F=ABSENT
+                if printf '%s' "$DUMPACC" | grep -qF 'Account {name=pvmechtest@example.invalid, type=com.google}'; then P1F=PRESENT; fi
+                if printf '%s' "$DUMPACC" | grep -qF 'Account {name=pvlocal@example.invalid, type=com.phonevault.test}'; then P2F=PRESENT; fi
+                if [ "$CACCT" != "planted" ]; then
+                  ACCT_LINE="ACCOUNT_PERSIST: UNGRADED (the restored session-$CSES pack carries capsule_accounts!=planted - no host-verified account plant was sealed into its capsule; the account phase of THIS run is graded by the NEXT wake; probes on this boot: google=$P1F local=$P2F)"
+                elif [ "$P1F" = "PRESENT" ]; then
+                  ACCT_LINE="ACCOUNT_PERSIST: YES (google-type probe pvmechtest@example.invalid is listed by AMS after capsule apply + reboot 2 - the account capsule mechanism works for the Google account type; local-type probe pvlocal@example.invalid: $P2F)"
+                elif [ "$P2F" = "PRESENT" ]; then
+                  ACCT_LINE="ACCOUNT_PERSIST: NO (the local-type probe pvlocal@example.invalid survived the capsule chain but the google-type probe pvmechtest@example.invalid is ABSENT - files move, Google-type rows do not survive; do NOT proceed to a real enrolment on this evidence)"
+                else
+                  ACCT_LINE="ACCOUNT_PERSIST: NO (neither synthetic probe is listed after capsule apply + reboot 2, although the restored pack's capsule was host-verified to contain both - the placed account DBs did not survive to AMS's read on this boot)"
+                fi
+                echo "$ACCT_LINE"
+                echo "$ACCT_LINE" >> "$WVERD"
                 if [ -n "$APP_INSTALLED_LIST" ]; then
                   PKGS2="$(adb -s emulator-5554 shell pm list packages 2>/dev/null | tr -d '\r')" || true
                   for SPKG in $APP_INSTALLED_LIST; do
@@ -4527,6 +4558,213 @@ jobs:
                   fi
                   if [ "$TS_OK" = "1" ]; then PV60_STATE=planted; echo "TESTSTATE PLANT: COMPLETE (sdcard marker + global setting + app, each read back) - the outgoing certificate will carry v60test_state=planted"; else PV60_STATE=absent; echo "TESTSTATE PLANT: INCOMPLETE - the outgoing certificate will carry v60test_state=absent and the next wake grades TESTSTATE: UNGRADED, never a false grade"; fi
                 fi
+                if [ -z "$W_FAIL" ]; then
+                  echo "-- V60-TEST ACCOUNT PHASE (r7): synthetic-account mechanism test. Two probe accounts are inserted into the guest account DBs as root with the framework stopped (the FIX-PLAN 2.4 cheapest test), then the EXTENDED capsule (identity files + account DBs + sync accounts.xml + GSF dir + GMS dir) is captured from the quiesced guest and host-verified, replacing the capsule this pack carries. Any failure keeps the previous capsule and seals capsule_accounts=absent, so the next wake grades UNGRADED - never a false grade --"
+                  ACCTD="pv-acct"; rm -rf "$ACCTD"; mkdir -p "$ACCTD"
+                  ACCT_FAIL=""
+                  echo "keystore probe (FIX-PLAN 2.4 - facts for the keystore question; the keystore is NOT carried by this capsule):"
+                  adb -s emulator-5554 shell "ls /data/misc/keystore 2>&1; ls /data/misc/keystore/user_0 2>/dev/null | head -8" 2>&1 | head -14
+                  echo "gms/gsf guest sizes:"; adb -s emulator-5554 shell "du -sm /data/data/com.google.android.gms /data/data/com.google.android.gsf" 2>&1
+                  adb -s emulator-5554 shell "stat -c '%n %u %g %a' /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db; ls -lZ /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db" > "$ACCTD/orig-stat.txt" 2>&1; cat "$ACCTD/orig-stat.txt"
+                  adb -s emulator-5554 shell stop 2>&1; echo "framework_stop_rc=$?"
+                  STOPPED=""
+                  for i in $(seq 1 12); do
+                    if adb -s emulator-5554 shell service check account 2>/dev/null | grep -q 'not found'; then STOPPED=1; echo "account service gone at poll $i - framework is stopped"; break; fi
+                    sleep 5
+                  done
+                  if [ "$STOPPED" != "1" ]; then ACCT_FAIL="framework did not stop within 60s (account service still answering)"; fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    adb -s emulator-5554 shell "ls /data/system_de/0/ /data/system_ce/0/" 2>&1 | tee "$ACCTD/db-dir-listing.txt"
+                    adb -s emulator-5554 pull /data/system_de/0/accounts_de.db "$ACCTD/accounts_de.db" 2>&1
+                    adb -s emulator-5554 pull /data/system_ce/0/accounts_ce.db "$ACCTD/accounts_ce.db" 2>&1
+                    if [ ! -s "$ACCTD/accounts_de.db" ] || [ ! -s "$ACCTD/accounts_ce.db" ]; then ACCT_FAIL="account DB pull failed or produced an empty file"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    cat > pv60-acct.py <<'PV60ACCEOF'
+          import sqlite3, sys
+
+          P1 = ("pvmechtest@example.invalid", "com.google")
+          P2 = ("pvlocal@example.invalid", "com.phonevault.test")
+          PROBES = (P1, P2)
+          TOKEN_TYPE = "pvmechprobe"
+          TOKEN_VALUE = "pv-mech-probe-token"
+
+          def dump_schema(path, label):
+              con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+              tables = [r[0] for r in con.execute(
+                  "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+              print("PVACCT schema %s tables: %s" % (label, ",".join(tables)))
+              for t in ("accounts", "authtokens", "extras"):
+                  if t in tables:
+                      cols = [r[1] for r in con.execute("PRAGMA table_info(%s)" % t)]
+                      print("PVACCT schema %s %s columns: %s" % (label, t, ",".join(cols)))
+              con.close()
+              return tables
+
+          def find_id(con, name, typ):
+              row = con.execute("SELECT _id FROM accounts WHERE name=? AND type=?",
+                                (name, typ)).fetchone()
+              return row[0] if row else None
+
+          def do_verify(de_path, ce_path):
+              ce = sqlite3.connect("file:%s?mode=ro" % ce_path, uri=True)
+              ce.execute("ATTACH DATABASE 'file:%s?mode=ro' AS deDb"
+                         % de_path.replace("'", "''"))
+              ok = True
+              for name, typ in PROBES:
+                  crow = ce.execute("SELECT _id FROM accounts WHERE name=? AND type=?",
+                                    (name, typ)).fetchone()
+                  drow = ce.execute(
+                      "SELECT _id FROM deDb.accounts WHERE name=? AND type=?",
+                      (name, typ)).fetchone()
+                  print("PVACCT verify name=%s type=%s ce_id=%s de_id=%s"
+                        % (name, typ, crow[0] if crow else None,
+                           drow[0] if drow else None))
+                  if crow is None or drow is None or crow[0] != drow[0]:
+                      ok = False
+              ce.close()
+              print("PVACCT_RESULT: %s" % ("VERIFY_OK" if ok else "VERIFY_FAIL"))
+              return 0 if ok else 3
+
+          def do_insert(de_path, ce_path):
+              de_tables = dump_schema(de_path, "de(before)")
+              ce_tables = dump_schema(ce_path, "ce(before)")
+              if "accounts" not in de_tables or "accounts" not in ce_tables:
+                  print("PVACCT_RESULT: FAIL accounts table missing (de=%s ce=%s)"
+                        % ("accounts" in de_tables, "accounts" in ce_tables))
+                  return 2
+              ce = sqlite3.connect(ce_path)
+              ce.execute("ATTACH DATABASE '%s' AS deDb" % de_path.replace("'", "''"))
+              try:
+                  ce.execute("BEGIN")
+                  for name, typ in PROBES:
+                      cid = find_id(ce, name, typ)
+                      if cid is None:
+                          cur = ce.execute(
+                              "INSERT INTO accounts (name, type, password)"
+                              " VALUES (?, ?, NULL)", (name, typ))
+                          cid = cur.lastrowid
+                          print("PVACCT inserted ce account id=%s name=%s type=%s"
+                                % (cid, name, typ))
+                      else:
+                          print("PVACCT ce account already present id=%s name=%s"
+                                " type=%s" % (cid, name, typ))
+                      drow = ce.execute("SELECT _id FROM deDb.accounts WHERE _id=?",
+                                        (cid,)).fetchone()
+                      if drow is None:
+                          ce.execute(
+                              "INSERT INTO deDb.accounts (_id, name, type,"
+                              " previous_name, last_password_entry_time_millis_epoch)"
+                              " VALUES (?, ?, ?, NULL, 0)", (cid, name, typ))
+                          print("PVACCT inserted de account id=%s" % cid)
+                      else:
+                          print("PVACCT de account already present id=%s" % cid)
+                  pid = find_id(ce, P1[0], P1[1])
+                  ce.execute(
+                      "INSERT OR IGNORE INTO authtokens (accounts_id, type, authtoken)"
+                      " VALUES (?, ?, ?)", (pid, TOKEN_TYPE, TOKEN_VALUE))
+                  print("PVACCT authtoken row ensured for id=%s type=%s"
+                        % (pid, TOKEN_TYPE))
+                  ce.commit()
+              except Exception as e:
+                  ce.rollback()
+                  print("PVACCT_RESULT: FAIL insert error: %r" % (e,))
+                  return 2
+              ce.close()
+              rc = do_verify(de_path, ce_path)
+              if rc != 0:
+                  return rc
+              print("PVACCT_RESULT: INSERT_OK")
+              return 0
+
+          if __name__ == "__main__":
+              mode = sys.argv[1]
+              if mode == "insert":
+                  sys.exit(do_insert(sys.argv[2], sys.argv[3]))
+              elif mode == "verify":
+                  sys.exit(do_verify(sys.argv[2], sys.argv[3]))
+              else:
+                  print("PVACCT_RESULT: FAIL unknown mode %s" % mode)
+                  sys.exit(2)
+          PV60ACCEOF
+                    python3 pv60-acct.py insert "$ACCTD/accounts_de.db" "$ACCTD/accounts_ce.db" > "$ACCTD/insert.log" 2>&1; ACCT_RC=$?
+                    cat "$ACCTD/insert.log"
+                    if [ "$ACCT_RC" != "0" ]; then ACCT_FAIL="synthetic insert tool rc=$ACCT_RC (log above)"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    DEUID="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; DEGID="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; DEMODE="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
+                    CEUID="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; CEGID="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; CEMODE="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
+                    if ! printf '%s' "$DEUID$DEGID$DEMODE$CEUID$CEGID$CEMODE" | grep -qx '[0-9][0-9]*'; then ACCT_FAIL="original ownership/mode not parseable from the stat capture"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    adb -s emulator-5554 push "$ACCTD/accounts_de.db" /data/system_de/0/accounts_de.db 2>&1
+                    adb -s emulator-5554 push "$ACCTD/accounts_ce.db" /data/system_ce/0/accounts_ce.db 2>&1
+                    adb -s emulator-5554 shell "rm -f /data/system_de/0/accounts_de.db-wal /data/system_de/0/accounts_de.db-shm /data/system_de/0/accounts_de.db-journal /data/system_ce/0/accounts_ce.db-wal /data/system_ce/0/accounts_ce.db-shm /data/system_ce/0/accounts_ce.db-journal; chown $DEUID:$DEGID /data/system_de/0/accounts_de.db; chmod $DEMODE /data/system_de/0/accounts_de.db; chown $CEUID:$CEGID /data/system_ce/0/accounts_ce.db; chmod $CEMODE /data/system_ce/0/accounts_ce.db; restorecon /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db; ls -lZ /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db" 2>&1
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    CAPF_R7="data/system/users/0/settings_secure.xml ${MARKER_GUEST#/} data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db data/system/sync/accounts.xml data/data/com.google.android.gsf data/data/com.google.android.gms"
+                    for R7DB in data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db; do
+                      for R7S in -wal -shm; do
+                        if adb -s emulator-5554 shell "ls /$R7DB$R7S" >/dev/null 2>&1; then CAPF_R7="$CAPF_R7 $R7DB$R7S"; echo "extended capsule also carries $R7DB$R7S (present at capture)"; fi
+                      done
+                    done
+                    rm -rf pv-capsule-r7; mkdir -p pv-capsule-r7
+                    adb -s emulator-5554 shell "tar -cf /data/local/tmp/pv-capsule.tar -C / $CAPF_R7" 2>&1; echo "extended_capsule_tar_rc=$?"
+                    adb -s emulator-5554 pull /data/local/tmp/pv-capsule.tar pv-capsule-r7/pv-capsule.tar 2>&1
+                    if [ ! -s pv-capsule-r7/pv-capsule.tar ]; then ACCT_FAIL="extended capsule pull failed or empty"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    CAPLIST7="$(tar -tf pv-capsule-r7/pv-capsule.tar 2>&1)"; printf '%s\n' "$CAPLIST7" | head -30
+                    for R7NEED in settings_secure.xml accounts_de.db accounts_ce.db sync/accounts.xml databases/gservices.db; do
+                      if ! printf '%s\n' "$CAPLIST7" | grep -q "$R7NEED"; then ACCT_FAIL="extended capsule tar is missing $R7NEED"; fi
+                    done
+                    if ! printf '%s\n' "$CAPLIST7" | grep -q 'com.google.android.gms/'; then ACCT_FAIL="extended capsule tar carries no GMS directory entries"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    rm -rf "$ACCTD/verify"; mkdir -p "$ACCTD/verify"
+                    tar -xf pv-capsule-r7/pv-capsule.tar -C "$ACCTD/verify" data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db 2>&1
+                    python3 pv60-acct.py verify "$ACCTD/verify/data/system_de/0/accounts_de.db" "$ACCTD/verify/data/system_ce/0/accounts_ce.db" > "$ACCTD/verify.log" 2>&1; VRC=$?
+                    cat "$ACCTD/verify.log"
+                    if [ "$VRC" != "0" ]; then ACCT_FAIL="host verification of the captured capsule failed rc=$VRC"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    NEWCAPSHA="$(sha256sum pv-capsule-r7/pv-capsule.tar | awk '{print $1}')"
+                    {
+                      echo "capsule_format=phonevault-identity-capsule-v3"
+                      echo "android_id=$CID"
+                      echo "marker_token=$CTOKEN"
+                      echo "marker_guest_path=$CMPATH"
+                      echo "capsule_sha256=$NEWCAPSHA"
+                      echo "settings_secure_md5_birth=$CMD5"
+                      echo "capsule_accounts=planted"
+                      echo "capsule_files=settings_secure.xml + marker + accounts_de.db + accounts_ce.db + sync/accounts.xml + gsf dir + gms dir (r7 extended capsule)"
+                    } > pv-capsule-r7/capsule-manifest.txt
+                    cp pv-capsule-r7/pv-capsule.tar "$AVDDIR/pv-capsule.tar"
+                    cp pv-capsule-r7/capsule-manifest.txt "$AVDDIR/capsule-manifest.txt"
+                    PV40_ACCT=planted
+                    echo "ACCOUNT PHASE: extended capsule captured from the quiesced guest and host-verified (both probes present in the captured DBs, ids matched across DE/CE) - the outgoing pack carries capsule_accounts=planted and capsule_sha256=$NEWCAPSHA; graded by the NEXT wake"
+                  else
+                    echo "ACCOUNT PHASE: FAILED - $ACCT_FAIL; the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent (the next wake grades ACCOUNT_PERSIST: UNGRADED, never a false NO)"
+                  fi
+                  adb -s emulator-5554 shell start 2>&1; echo "framework_start_rc=$?"
+                  BACK=""
+                  for i in $(seq 1 36); do
+                    if adb -s emulator-5554 shell service check account 2>/dev/null | grep -q 'found'; then BACK=1; echo "account service back at poll $i"; break; fi
+                    sleep 5
+                  done
+                  if [ "$BACK" != "1" ]; then
+                    echo "ACCOUNT PHASE CONTROL: account service did not return within 3 min of framework start - control read skipped"
+                  else
+                    sleep 5
+                    DUMPCTL="$(adb -s emulator-5554 shell dumpsys account 2>/dev/null | tr -d '\r')"
+                    printf '%s\n' "$DUMPCTL" | grep -F 'Account {' | head -20
+                    if printf '%s' "$DUMPCTL" | grep -qF 'Account {name=pvmechtest@example.invalid, type=com.google}' && printf '%s' "$DUMPCTL" | grep -qF 'Account {name=pvlocal@example.invalid, type=com.phonevault.test}'; then
+                      echo "ACCOUNT PHASE CONTROL: both probes listed by AMS in the planting run itself (the insertion was accepted by a live AMS; cross-wake survival is graded by the NEXT wake)"
+                    else
+                      echo "ACCOUNT PHASE CONTROL: probes NOT both listed in the planting run - the insertion was not accepted as-is by AMS; read the next wake's grade together with this control failure"
+                    fi
+                  fi
+                fi
                 rt4_stop
                 if [ -n "$W_FAIL" ]; then
                   echo "WAKE: FAILED - $W_FAIL (certificate $CID, control-pre-apply $PRE_ID, post-apply $POST_ID, after-reboot2 $FINAL_ID; NO re-pack - the pinned pack stays the newest good state)"
@@ -4537,6 +4775,7 @@ jobs:
                 else
                   PV40_ID="$CID"; PV40_TOKEN="$CTOKEN"; PV40_MOK=1; PV40_MPATH="$CMPATH"
                   PV40_CAPSHA="$CCAPSHA"; PV40_MD5="$CMD5"; PV40_SESSION=$((CSES + 1)); PV40_BORN="$CBORN"; PV40_ROUTE="wake-v4.0"
+                  if [ -n "$NEWCAPSHA" ]; then PV40_CAPSHA="$NEWCAPSHA"; echo "pack certificate capsule_sha256 updated to the r7 re-captured capsule: $NEWCAPSHA"; fi
                   pv40_pack phonevault-state.tar
                   if [ "$PV40_PACK_OK" != "1" ]; then
                     echo "WAKE: SAME PHONE (identity proven as above) BUT RE-PACK FAILED (pack tar/seal failed); the shelf was NOT advanced - the pinned pack remains the newest good state"
