@@ -115,7 +115,7 @@ jobs:
           elif [ "$PHONE" = "two" ]; then
             PV_ART_NAME=phonevault2-avd-state; PV_OUT_FILE=emulator-output-2.txt; PV_LP_BRANCH=phonevault2-live; PV_LP_FILE=live-now-2.txt; PV_VAULT_REPO=jasveerai92/phonevault-two
           else
-            PV_ART_NAME=phonevault-avd-state; PV_OUT_FILE=emulator-output.txt; PV_LP_BRANCH=phonevault-live; PV_LP_FILE=live-now.txt; PV_VAULT_REPO=jasveerai88/phonevault
+            PV_ART_NAME=phonevault-avd-state; PV_OUT_FILE=emulator-output.txt; PV_LP_BRANCH=phonevault-live; PV_LP_FILE=live-now.txt; PV_VAULT_REPO=jasveerai92/phonevault-one
           fi
           { echo "PV_PHONE_ID=$PHONE"; echo "PV_ART_NAME=$PV_ART_NAME"; echo "PV_OUT_FILE=$PV_OUT_FILE"; echo "PV_LP_BRANCH=$PV_LP_BRANCH"; echo "PV_LP_FILE=$PV_LP_FILE"; echo "PV_VAULT_REPO=$PV_VAULT_REPO"; } >> "$GITHUB_ENV"
           echo "PHONE SELECT (v5.2): phone=$PHONE artifact=$PV_ART_NAME output=$PV_OUT_FILE live=$PV_LP_BRANCH/$PV_LP_FILE vault=$PV_VAULT_REPO"
