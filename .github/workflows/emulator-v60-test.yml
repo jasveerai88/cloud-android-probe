@@ -4559,7 +4559,7 @@ jobs:
                   if [ "$TS_OK" = "1" ]; then PV60_STATE=planted; echo "TESTSTATE PLANT: COMPLETE (sdcard marker + global setting + app, each read back) - the outgoing certificate will carry v60test_state=planted"; else PV60_STATE=absent; echo "TESTSTATE PLANT: INCOMPLETE - the outgoing certificate will carry v60test_state=absent and the next wake grades TESTSTATE: UNGRADED, never a false grade"; fi
                 fi
                 if [ -z "$W_FAIL" ]; then
-                  echo "-- V60-TEST ACCOUNT PHASE (r9): synthetic-account mechanism test, capture replaced with the proven pull primitive after the r8 live failure (run 43592589184: BOTH r8 capture primitives failed - the guest sqlite snapshot open returned 'unable to open database file' rc=1 on both account DBs, and the verified-stop fallback never engaged because its stop ran unprivileged, 'Must be root'; probes again not planted, capsule_accounts=absent sealed, fail-closed held). r9 changes, confined to this phase: (1) the CAPTURE is the one primitive this project has used successfully on every wake since birth - the identity capsule's adb-root file pull: this phase re-establishes adb root IN THIS STEP and verifies uid=0 (step 17 runs after reboot 2 and inherits no root state; steps 14/15 root inside their own steps), then pulls the exact account file set as root and gates it with the host paircheck, re-pulling up to 3 times on a failed check before failing closed exactly as before; the r8 snapshot/stop ladder is REMOVED entirely - simpler is the fix (design section 13); (2) the PLANT is unchanged from r8 - host-side insertion of both probes into the verified pulled pair, sealed via the guest staging tree; (3) grading semantics unchanged - the next wake's ACCOUNT_PERSIST line, after capsule apply + reboot 2 --"
+                  echo "-- V60-TEST ACCOUNT PHASE (r10): synthetic-account mechanism test, capture + plant PROVEN LIVE in run 43594324780 under r9 (adb-root-pull attempt 1 paircheck OK; host plant INSERT_OK + VERIFY_OK with matched DE/CE/system ids) - the seal failed only at the extended-capsule build check: the tar carried no GMS directory entries after an UNCHECKED cp -a staging pair (nothing in the phase verified the GSF/GMS copies before the tar, and no guest-side source fact was printed to attribute the loss). r10 changes, confined to ASSEMBLY + CHECK: (1) the GSF/GMS dirs enter the staging tree via a guest root tar of the source paths extracted into staging (the identity tree method, design 13.1) - the cp -a pair is retired; (2) the phase prints the guest source facts (ls as root) before staging and the staged result after, sizes included, and records GSF_SRC/GMS_SRC; (3) the build check requires each big dir IFF its source was present on the guest - documented absence is waived for the mechanism test (the planted DB pair still seals), present-but-missing fails closed, first failure wins; production does NOT inherit the waiver (PROD-R10-DELTA.md). Capture, plant, grading semantics unchanged from r9 --"
                   ACCTD="pv-acct"; rm -rf "$ACCTD"; mkdir -p "$ACCTD"
                   ACCT_FAIL=""; ACCT_PRIM=""; ACCT_ATTEMPT=0
                   echo "-- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --"
@@ -4730,7 +4730,7 @@ jobs:
                   print("PVACCT_RESULT: FAIL unknown mode %s" % mode)
                   sys.exit(2)
           PV60ACCEOF
-                  echo "-- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). The r8 ladder is removed: no guest-side snapshot open, no framework stop anywhere in the account path. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present), /data/system/sync/accounts.xml when present, and the GSF/GMS whole dirs, which ride the guest staging tar at assembly below exactly as r7/r8 defined them (a plain tree pull does not preserve uid/gid/mode; the root tar does - it is the identity capsule's own tree method, pulled by adb like every capsule). Consistency argument: capture runs on an idle, settled guest (post-verdict, post-plants, no enrolment in flight); DB + wal + shm pulled as one set replay coherently on host open; the host PAIRCHECK (sqlite integrity_check + DE/CE (id,name,type) identity) is the verification gate - a torn pull fails the check and is re-pulled, never sealed --"
+                  echo "-- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). The r8 ladder is removed: no guest-side snapshot open, no framework stop anywhere in the account path. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present), /data/system/sync/accounts.xml when present, and the GSF/GMS whole dirs, which enter the staging tree at assembly below via a guest root tar of the source paths (r10 - a plain tree pull does not preserve uid/gid/mode; the root tar does - it is the identity capsule's own tree method, pulled by adb like every capsule; the r7-r9 cp -a staging pair was retired after run 43594324780, where it delivered a capsule with no GMS entries and the build check failed the seal). Consistency argument: capture runs on an idle, settled guest (post-verdict, post-plants, no enrolment in flight); DB + wal + shm pulled as one set replay coherently on host open; the host PAIRCHECK (sqlite integrity_check + DE/CE (id,name,type) identity) is the verification gate - a torn pull fails the check and is re-pulled, never sealed --"
                   while [ -z "$ACCT_FAIL" ] && [ -z "$ACCT_PRIM" ] && [ "$ACCT_ATTEMPT" -lt 3 ]; do
                     ACCT_ATTEMPT=$((ACCT_ATTEMPT+1))
                     PULLD="$ACCTD/pull"; rm -rf "$PULLD"; mkdir -p "$PULLD"
@@ -4763,7 +4763,7 @@ jobs:
                   if [ -z "$ACCT_FAIL" ] && [ -z "$ACCT_PRIM" ]; then ACCT_FAIL="adb-root-pull capture did not verify on any of 3 attempts (per-attempt paircheck verdicts printed above) - failing closed exactly as r7/r8 did"; fi
                   if [ -n "$ACCT_PRIM" ]; then echo "ACCOUNT CAPTURE: verified via $ACCT_PRIM on attempt $ACCT_ATTEMPT (the DB copies in $ACCTD passed host paircheck; sync/accounts.xml: $ACCT_SYNC)"; fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    echo "-- host-side plant (r9, unchanged from r8): the two probes are inserted into the HOST copies only, mirroring AMS's own insert order (CE row first, DE row with the SAME id, dummy CE authtoken for the google-type probe). Nothing is pushed back to the guest's canonical DB paths in this design - the planted copies reach the next wake exclusively through the capsule --"
+                    echo "-- host-side plant (r10, unchanged from r8/r9): the two probes are inserted into the HOST copies only, mirroring AMS's own insert order (CE row first, DE row with the SAME id, dummy CE authtoken for the google-type probe). Nothing is pushed back to the guest's canonical DB paths in this design - the planted copies reach the next wake exclusively through the capsule --"
                     python3 pv60-acct.py insert "$ACCTD/accounts_de.db" "$ACCTD/accounts_ce.db" > "$ACCTD/insert.log" 2>&1; ACCT_RC=$?
                     cat "$ACCTD/insert.log"
                     if [ "$ACCT_RC" != "0" ]; then ACCT_FAIL="synthetic insert tool rc=$ACCT_RC (log above)"; fi
@@ -4777,35 +4777,61 @@ jobs:
                     if [ -z "$ACCT_FAIL" ] && [ "$ACCT_SYNC" = "present" ] && ! printf '%s' "$SYUID$SYGID$SYMODE" | grep -qx '[0-9][0-9]*'; then ACCT_FAIL="sync/accounts.xml ownership/mode not parseable from the stat capture"; fi
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    echo "-- capsule assembly (r9): the extended capsule is tarred in the guest from a STAGING TREE, so the planted DB copies enter the capsule without ever touching the canonical DB paths: planted DBs are pushed to staging paths only, given the canonical files' recorded uid/gid/mode there, and the identity + sync + GSF + GMS payload is copied alongside - the copy is live (the framework is never stopped in r9), the DB pair - the graded content - is the paircheck-verified pull, and the big-dir live-copy caveat is the same one the r7 design accepted for its tar --"
+                    echo "-- capsule assembly (r10): the extended capsule is tarred in the guest from a STAGING TREE, so the planted DB copies enter the capsule without ever touching the canonical DB paths: planted DBs are pushed to staging paths only, given the canonical files' recorded uid/gid/mode there, and the identity + sync payload is copied alongside. The GSF/GMS whole dirs are staged differently from r9: a GUEST ROOT TAR of the source paths (the identity tree method, design 13.1) is extracted into the staging tree - the r9 cp -a pair is retired (run 43594324780: the build check found no GMS entries in the tar, and nothing in the r9 phase had verified either dir copy before the tar or printed the guest-side source facts, so the loss was unattributable from the log). The copy is live (the framework is never stopped), the DB pair - the graded content - is the paircheck-verified pull, and the big-dir live-copy caveat is the same one the r7 design accepted for its tar --"
                     STG="/data/local/tmp/pv-capstage"; MKDIRP="${MARKER_GUEST%/*}"
-                    adb -s emulator-5554 shell "rm -rf $STG /data/local/tmp/pv-capsule.tar; mkdir -p $STG/data/system_de/0 $STG/data/system_ce/0 $STG/data/system/users/0 $STG/data/system/sync $STG/data/data $STG$MKDIRP" 2>&1
+                    echo "-- account assembly source facts (r10, guest ls as root - the fact the r9 log could not provide):"
+                    adb -s emulator-5554 shell "ls -ld /data/data/com.google.android.gsf /data/data/com.google.android.gms; du -sm /data/data/com.google.android.gsf /data/data/com.google.android.gms" 2>&1
+                    GSF_SRC="absent"; GMS_SRC="absent"
+                    if adb -s emulator-5554 shell "test -d /data/data/com.google.android.gsf" >/dev/null 2>&1; then GSF_SRC="present"; fi
+                    if adb -s emulator-5554 shell "test -d /data/data/com.google.android.gms" >/dev/null 2>&1; then GMS_SRC="present"; fi
+                    echo "ACCOUNT ASSEMBLY SOURCE FACT: gsf=$GSF_SRC gms=$GMS_SRC (guest /data/data dirs as root; absent is a legitimate state for a never-enrolled guest - the build check below treats documented absence and staging loss differently)"
+                    adb -s emulator-5554 shell "rm -rf $STG /data/local/tmp/pv-capsule.tar /data/local/tmp/pv-dirs.tar; mkdir -p $STG/data/system_de/0 $STG/data/system_ce/0 $STG/data/system/users/0 $STG/data/system/sync $STG/data/data $STG$MKDIRP" 2>&1
                     adb -s emulator-5554 push "$ACCTD/accounts_de.db" "$STG/data/system_de/0/accounts_de.db" 2>&1
                     adb -s emulator-5554 push "$ACCTD/accounts_ce.db" "$STG/data/system_ce/0/accounts_ce.db" 2>&1
-                    adb -s emulator-5554 shell "chown $DEUID:$DEGID $STG/data/system_de/0/accounts_de.db; chmod $DEMODE $STG/data/system_de/0/accounts_de.db; chown $CEUID:$CEGID $STG/data/system_ce/0/accounts_ce.db; chmod $CEMODE $STG/data/system_ce/0/accounts_ce.db; cp -a /data/system/users/0/settings_secure.xml $STG/data/system/users/0/settings_secure.xml; cp -a $MARKER_GUEST $STG$MARKER_GUEST; cp -a /data/data/com.google.android.gsf $STG/data/data/com.google.android.gsf; cp -a /data/data/com.google.android.gms $STG/data/data/com.google.android.gms; ls -lZ $STG/data/system_de/0/accounts_de.db $STG/data/system_ce/0/accounts_ce.db" 2>&1
+                    adb -s emulator-5554 shell "chown $DEUID:$DEGID $STG/data/system_de/0/accounts_de.db; chmod $DEMODE $STG/data/system_de/0/accounts_de.db; chown $CEUID:$CEGID $STG/data/system_ce/0/accounts_ce.db; chmod $CEMODE $STG/data/system_ce/0/accounts_ce.db; cp -a /data/system/users/0/settings_secure.xml $STG/data/system/users/0/settings_secure.xml; cp -a $MARKER_GUEST $STG$MARKER_GUEST; ls -lZ $STG/data/system_de/0/accounts_de.db $STG/data/system_ce/0/accounts_ce.db" 2>&1
+                    DIRSARGS=""; if [ "$GSF_SRC" = "present" ]; then DIRSARGS="$DIRSARGS data/data/com.google.android.gsf"; fi; if [ "$GMS_SRC" = "present" ]; then DIRSARGS="$DIRSARGS data/data/com.google.android.gms"; fi
+                    if [ -n "$DIRSARGS" ]; then
+                      echo "-- account assembly dirs tar (r10): guest root tar of the present source dirs, extracted into the staging tree (the tar records uid/gid/mode; the root extract restores them; an explicitly named source dir yields at least its directory entry, so a present-but-empty dir still lands in the staging tree and in the capsule tar) --"
+                      adb -s emulator-5554 shell "tar -cf /data/local/tmp/pv-dirs.tar -C / $DIRSARGS; echo pv_dirs_tar_rc=\$?; ls -l /data/local/tmp/pv-dirs.tar; tar -xf /data/local/tmp/pv-dirs.tar -C $STG; echo pv_dirs_extract_rc=\$?" 2>&1
+                    else
+                      echo "ACCOUNT ASSEMBLY: both GSF and GMS source dirs are ABSENT on this guest - no dirs tar to stage (documented absence; the build check waives both dirs for this capture)"
+                    fi
+                    echo "-- account assembly staged result (r10):"; adb -s emulator-5554 shell "ls $STG/data/data; du -sm $STG/data/data/com.google.android.gsf $STG/data/data/com.google.android.gms" 2>&1
                     if [ "$ACCT_SYNC" = "present" ]; then adb -s emulator-5554 push "$ACCTD/accounts.xml" "$STG/data/system/sync/accounts.xml" 2>&1; adb -s emulator-5554 shell "chown $SYUID:$SYGID $STG/data/system/sync/accounts.xml; chmod $SYMODE $STG/data/system/sync/accounts.xml" 2>&1; fi
                     adb -s emulator-5554 shell "tar -cf /data/local/tmp/pv-capsule.tar -C $STG data" 2>&1; echo "extended_capsule_tar_rc=$?"
-                    rm -rf pv-capsule-r9; mkdir -p pv-capsule-r9
-                    adb -s emulator-5554 pull /data/local/tmp/pv-capsule.tar pv-capsule-r9/pv-capsule.tar 2>&1
-                    if [ ! -s pv-capsule-r9/pv-capsule.tar ]; then ACCT_FAIL="extended capsule pull failed or empty"; fi
+                    rm -rf pv-capsule-r10; mkdir -p pv-capsule-r10
+                    adb -s emulator-5554 pull /data/local/tmp/pv-capsule.tar pv-capsule-r10/pv-capsule.tar 2>&1
+                    if [ ! -s pv-capsule-r10/pv-capsule.tar ]; then ACCT_FAIL="extended capsule pull failed or empty"; fi
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    CAPLIST9="$(tar -tf pv-capsule-r9/pv-capsule.tar 2>&1)"; printf '%s\n' "$CAPLIST9" | head -30
-                    for R9NEED in settings_secure.xml accounts_de.db accounts_ce.db databases/gservices.db; do
-                      if ! printf '%s\n' "$CAPLIST9" | grep -q "$R9NEED"; then ACCT_FAIL="extended capsule tar is missing $R9NEED"; fi
+                    CAPLIST10="$(tar -tf pv-capsule-r10/pv-capsule.tar 2>&1)"; printf '%s\n' "$CAPLIST10" | head -30
+                    # R10 CHECKLIST BEGIN - the build completeness check, kept between these markers verbatim: the r10 fixture extracts this block from the built workflow and exercises it against fixture tars (source present/absent x staged/missing). Semantics (design 14.3): the identity + DB core is unconditional; each big dir is required IFF its source was present on the guest (GSF_SRC/GMS_SRC, printed at assembly) - documented source absence is waived for the mechanism test (the planted DB pair still seals), source-present-but-missing-from-tar fails closed; first failure wins (r9 overwrote ACCT_FAIL, hiding earlier failures). Production does NOT inherit the waiver (PROD-R10-DELTA.md).
+                    for R10NEED in settings_secure.xml accounts_de.db accounts_ce.db; do
+                      if ! printf '%s\n' "$CAPLIST10" | grep -q "$R10NEED"; then if [ -z "$ACCT_FAIL" ]; then ACCT_FAIL="extended capsule tar is missing $R10NEED"; fi; fi
                     done
-                    if [ "$ACCT_SYNC" = "present" ] && ! printf '%s\n' "$CAPLIST9" | grep -q 'sync/accounts.xml'; then ACCT_FAIL="extended capsule tar is missing sync/accounts.xml (present at capture)"; fi
-                    if ! printf '%s\n' "$CAPLIST9" | grep -q 'com.google.android.gms/'; then ACCT_FAIL="extended capsule tar carries no GMS directory entries"; fi
+                    if [ "$ACCT_SYNC" = "present" ] && ! printf '%s\n' "$CAPLIST10" | grep -q 'sync/accounts.xml'; then if [ -z "$ACCT_FAIL" ]; then ACCT_FAIL="extended capsule tar is missing sync/accounts.xml (present at capture)"; fi; fi
+                    if [ "$GSF_SRC" = "present" ]; then
+                      if ! printf '%s\n' "$CAPLIST10" | grep -q 'com.google.android.gsf/'; then if [ -z "$ACCT_FAIL" ]; then ACCT_FAIL="extended capsule tar carries no GSF directory entries although the source dir is present on the guest (staging loss - fail closed)"; fi; fi
+                      if ! printf '%s\n' "$CAPLIST10" | grep -q 'databases/gservices.db'; then if [ -z "$ACCT_FAIL" ]; then ACCT_FAIL="extended capsule tar is missing databases/gservices.db although the GSF source dir is present on the guest (staging loss - fail closed)"; fi; fi
+                    else
+                      echo "ACCOUNT ASSEMBLY CHECK: GSF source dir ABSENT on guest (documented at assembly) - GSF tar checks waived for this capture (test lineage; production seals strictly - PROD-R10-DELTA.md)"
+                    fi
+                    if [ "$GMS_SRC" = "present" ]; then
+                      if ! printf '%s\n' "$CAPLIST10" | grep -q 'com.google.android.gms/'; then if [ -z "$ACCT_FAIL" ]; then ACCT_FAIL="extended capsule tar carries no GMS directory entries although the source dir is present on the guest (staging loss - fail closed)"; fi; fi
+                    else
+                      echo "ACCOUNT ASSEMBLY CHECK: GMS source dir ABSENT on guest (documented at assembly) - GMS tar check waived for this capture (test lineage; production seals strictly - PROD-R10-DELTA.md)"
+                    fi
+                    # R10 CHECKLIST END
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
                     rm -rf "$ACCTD/verify"; mkdir -p "$ACCTD/verify"
-                    tar -xf pv-capsule-r9/pv-capsule.tar -C "$ACCTD/verify" data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db 2>&1
+                    tar -xf pv-capsule-r10/pv-capsule.tar -C "$ACCTD/verify" data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db 2>&1
                     python3 pv60-acct.py verify "$ACCTD/verify/data/system_de/0/accounts_de.db" "$ACCTD/verify/data/system_ce/0/accounts_ce.db" > "$ACCTD/verify.log" 2>&1; VRC=$?
                     cat "$ACCTD/verify.log"
                     if [ "$VRC" != "0" ]; then ACCT_FAIL="host verification of the captured capsule failed rc=$VRC"; fi
                   fi
                   if [ -z "$ACCT_FAIL" ]; then
-                    NEWCAPSHA="$(sha256sum pv-capsule-r9/pv-capsule.tar | awk '{print $1}')"
+                    NEWCAPSHA="$(sha256sum pv-capsule-r10/pv-capsule.tar | awk '{print $1}')"
                     {
                       echo "capsule_format=phonevault-identity-capsule-v3"
                       echo "android_id=$CID"
@@ -4814,19 +4840,19 @@ jobs:
                       echo "capsule_sha256=$NEWCAPSHA"
                       echo "settings_secure_md5_birth=$CMD5"
                       echo "capsule_accounts=planted"
-                      echo "capsule_files=settings_secure.xml + marker + accounts_de.db + accounts_ce.db + sync/accounts.xml + gsf dir + gms dir (r9 extended capsule, adb-root-pull capture, host-side plant via staging tree)"
-                    } > pv-capsule-r9/capsule-manifest.txt
-                    cp pv-capsule-r9/pv-capsule.tar "$AVDDIR/pv-capsule.tar"
-                    cp pv-capsule-r9/capsule-manifest.txt "$AVDDIR/capsule-manifest.txt"
+                      echo "capsule_files=settings_secure.xml + marker + accounts_de.db + accounts_ce.db + sync/accounts.xml + gsf dir + gms dir (r10 extended capsule, adb-root-pull capture, host-side plant, guest-root-tar dir staging)"
+                    } > pv-capsule-r10/capsule-manifest.txt
+                    cp pv-capsule-r10/pv-capsule.tar "$AVDDIR/pv-capsule.tar"
+                    cp pv-capsule-r10/capsule-manifest.txt "$AVDDIR/capsule-manifest.txt"
                     PV40_ACCT=planted
                     echo "ACCOUNT PHASE: extended capsule assembled via the guest staging tree and host-verified (both probes present in the sealed DBs, ids matched across DE/CE; capture primitive: $ACCT_PRIM) - the outgoing pack carries capsule_accounts=planted and capsule_sha256=$NEWCAPSHA; graded by the NEXT wake"
                   else
                     echo "ACCOUNT PHASE: FAILED - $ACCT_FAIL; the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent (the next wake grades ACCOUNT_PERSIST: UNGRADED, never a false NO)"
                   fi
-                  echo "framework was never stopped in this run (capture primitive: adb-root-pull; the r8 snapshot/stop ladder was removed in r9) - no restart to perform or prove"
+                  echo "framework was never stopped in this run (capture primitive: adb-root-pull; the r8 snapshot/stop ladder was removed in r9; the r9 cp -a dir staging was replaced by the guest-root-tar method in r10) - no restart to perform or prove"
                   DUMPCTL="$(adb -s emulator-5554 shell dumpsys account 2>/dev/null | tr -d '\r')"
                   printf '%s\n' "$DUMPCTL" | grep -F 'Account {' | head -20
-                  echo "ACCOUNT PHASE CONTROL (r9 semantics, restated): the probes are NOT expected in the listing above - the plant is host-side, the guest's canonical account DBs were never written, and this run's AMS can only serve what it booted with. The in-run control for the plant is the host verification of the SEALED capsule above; the cross-wake control - what the NEXT wake's AMS does with the planted DBs after capsule apply + reboot 2 - is exactly that wake's ACCOUNT_PERSIST grade. An in-run probe listing is therefore neither expected nor required in r9 (this replaces the r7 control, which conflated insertion-acceptance with transport)"
+                  echo "ACCOUNT PHASE CONTROL (r10 semantics, restated): the probes are NOT expected in the listing above - the plant is host-side, the guest's canonical account DBs were never written, and this run's AMS can only serve what it booted with. The in-run control for the plant is the host verification of the SEALED capsule above; the cross-wake control - what the NEXT wake's AMS does with the planted DBs after capsule apply + reboot 2 - is exactly that wake's ACCOUNT_PERSIST grade. An in-run probe listing is therefore neither expected nor required in r10 (this replaces the r7 control, which conflated insertion-acceptance with transport)"
                 fi
                 rt4_stop
                 if [ -n "$W_FAIL" ]; then
