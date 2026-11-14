@@ -5009,7 +5009,7 @@ jobs:
           fi
 
       - name: Vault PhoneVault AVD state to the HF dataset (v5.4 direct-to-vault; replaces the artifact upload)
-        if: always() && steps.packflag.outputs.pack_ok == 'true'
+        if: always() && github.event_name == 'workflow_dispatch' && (inputs.mode == 'birth' || inputs.mode == 'wake') && steps.packflag.outputs.pack_ok == 'true'
         shell: bash
         env:
           PV_HF_TOKEN: ${{ secrets.PV_HF_TOKEN }}
