@@ -1,6 +1,7 @@
-DATA_PERSIST: NO (the restored session-7 pack planted a sentinel, but /data/local/tmp/pv-datapersist-sentinel.txt is absent or stale on this boot - /data was re-initialised on this wake; only the identity capsule carried over; raw read: '<missing/empty>')
-ACCOUNT_PERSIST: UNGRADED (the restored session-7 pack carries capsule_accounts!=planted - no host-verified account plant was sealed into its capsule; the account phase of THIS run is graded by the NEXT wake; probes on this boot: google=ABSENT local=ABSENT)
-WAKE: SAME PHONE - applied android_id survived the extra reboot; session advanced to 8
+DATA_PERSIST: NO (the restored session-8 pack planted a sentinel, but /data/local/tmp/pv-datapersist-sentinel.txt is absent or stale on this boot - /data was re-initialised on this wake; only the identity capsule carried over; raw read: '<missing/empty>')
+TESTSTATE: sdcard_marker=MISSING global_setting=MISSING state_app=ABSENT
+ACCOUNT_PERSIST: YES (google-type probe pvmechtest@example.invalid is listed by AMS after capsule apply + reboot 2 - the account capsule mechanism works for the Google account type; local-type probe pvlocal@example.invalid: PRESENT)
+WAKE: SAME PHONE - applied android_id survived the extra reboot; session advanced to 9
 APP: SKIPPED - install_apps=no at dispatch
 EMULATOR BOOT: BOOTED - wake job (v4.0 production: pinned + certificate-verified pack restored into a clean hand-made folder, boot WITHOUT -wipe-data, capsule re-applied by root BEFORE the verdict identity read, identity re-judged after a second plain reboot, state re-packed with session+1 and stored to the HF vault dataset (v5.4); sections 07b/07c + 07d); PACKED=1 (production pack stored to the phone HF vault dataset, v5.4 direct-to-vault; sections 07a/07b/07c + 07d); marker: see identity verdict above
 
@@ -12,9 +13,9 @@ v3.7 changes over v3.6, from the roundtrip2 run No.13 verdict (raw output person
 v3.8 changes over v3.7, from the roundtrip3 run No.15 findings (raw output personally verified by Atlas): attempt S2 RAN but its verdict was polluted by workflow bugs (the /sdcard marker push failed at birth - Operation not permitted - so marker_ok was 0 from the start; the pack tar then TRUNCATED with tar_rc=2 on a full disk while PACK_OK=1 still printed, so snapshots/pv1 vanished on extraction and the boot-2 verdict read an EMPTY certificate); attempt C never ran (birth boot flake). v3.8 fixes, in order: MARKER - written by adb root to /data/local/tmp/phonevault-marker.txt (no FUSE layer), /sdcard demoted to a bounded-retry fallback, and a birth without a verified marker is NOT EVALUATED and never packed. PACK HYGIENE - PACK_OK requires tar_rc=0 and the AVD is never wiped under an untrusted pack; snapshots/default_boot (the emulator own 2.3 GB quick-boot cache, mutating at exit) is EXCLUDED; the integrity hash is computed after the tar exists, FROM the tar over its largest file, sealed into the attempt state handoff, and restore re-hashes the extracted file against it (match by construction). CERTIFICATE GATE - restore reads phonevault-version.txt FROM THE EXTRACTED FOLDER and asserts android_id non-empty + marker_ok=1 BEFORE booting; a failed gate is NOT EVALUATED, never IDENTITY LOST; the S restore additionally gates on snapshots/pv1/ram.bin existing non-empty, and if the restore boot log cannot show pv1 loading, even a matching identity is SNAPSHOT LOAD UNPROVEN, not SAME PHONE. BOOT ROBUSTNESS - waits raised to ~15 min with ONE in-attempt retry. Re-sequenced: attempt C (identity-as-code) FIRST, attempt S SECOND; each attempt is split into capture+pack and gated-restore+verdict steps because the fixed single steps exceed the per-step size gate. Everything else - graceful pack, runtime-read expected values, no hash or ID written into this workflow - is v3.7 unchanged.
 v3.9 changes over v3.8, from the roundtrip4 run No.17 failure (job FAILED in 7m 26s; the checker verified the output commit never landed: disk-full reported at job step 11 of 17, which is PhoneVault step 10 of 12 - roundtrip4 attempt C part 2 - and the final output step then had no room either; the run produced NO verdicts at all): the GitHub runner gives this job only ~14 GB of usable disk, and the SDK + system image + the AVD + multi-GB per-attempt state tars and snapshot payloads across two attempts eat it. v3.9 adds mode roundtrip5 = the roundtrip4 pair (attempt C FIRST, attempt S SECOND, every v3.8 gate unchanged) plus a DISK DISCIPLINE layer: (1) START-OF-JOB AUDIT in this step (section 0c): df -h before/after a CONSERVATIVE cleanup of standard runner junk this job never uses (the .NET SDK, the Haskell toolchain, Boost headers, hosted-toolcache Python/PyPy, pre-pulled docker images, and SDK system images OTHER than android-34 - cmdline-tools/emulator/platform-tools and the android-34 image are never touched); every removal is listed with its measured size. (2) PER-ATTEMPT CLEANUP: the moment an attempt verdict is sealed and its evidence copied out, that attempt local state tar (and, after attempt C, the restored AVD state files, under the same keep-list attempt S applies at its own start) is DELETED before the next attempt begins; df -h is printed at every attempt boundary. (3) MID-JOB DISK GUARD: a guard helper runs at the start of each roundtrip5 attempt step; free space under 2 GB seals that attempt as NOT EVALUATED (disk) and skips its body - a harness verdict, never a corrupted run and never evidence. (4) OUTPUT SURVIVAL: each attempt verdict is already copied into .pv-evidence-final the moment it is sealed; v3.9 additionally uploads that folder (text only, KBs) as its own artifact (phonevault-evidence) and writes both verdict lines to the GitHub step summary in the final step, BEFORE the output commit is attempted - a late disk-full can no longer swallow the verdicts. Everything else - graceful pack, certificate + snapshot gates, root marker path, boot retry, runtime-read expected values, no hash or ID written into this workflow - is v3.8 unchanged.
 v4.0 changes over v3.9, from the roundtrip5 run No.19 verdict (STATE.md has the sealed record): ROUNDTRIP5-C: IDENTITY RESTORED (code-applied) - identity-as-code is PROVEN (birth ID re-applied by root after a disk restore that woke with a different, re-initialised ID; survived the extra reboot); ROUNDTRIP5-S: IDENTITY LOST (clean) - snapshot route CLOSED on android-34 google_apis, as are disk-native transport (encryption wall) and no-lock birth. v4.0 adds NO experiment: it promotes attempt-C into production: two dispatch-only modes. BIRTH (07a) runs ONCE: fresh -wipe-data boot, root marker under the validity gate, capsule captured exactly as attempt C did, graceful stop, production pack (v3.9 hygiene: tar_rc=0, snapshots/ excluded, largest-file hash sealed + re-verified FROM the tar) with the capsule INSIDE the pack (pv-capsule.tar + capsule-manifest.txt members - a wake runs in a later run), certificate production=1 session=1 capsule_sha256 android_id marker_ok=1 born_utc, pack UPLOADED as phonevault-avd-state, sha256 printed. WAKE (07b/07c) is every later power-on: pin_run_id REQUIRED (birth or newest GOOD wake run, never newest-blind); certificate verified BEFORE extraction (android_id + marker_ok=1 + capsule re-hash + largest-file re-hash; failure = WAKE: NOT EVALUATED, certificate printed); clean hand-made folder, boot WITHOUT -wipe-data, control readings printed, capsule re-applied by root BEFORE any verdict read (tar at /, settings put LAST); WAKE: SAME PHONE only if ID + marker match after apply AND after a second reboot; then RE-PACKED with the same capsule, session+1, uploaded - state advances every wake. Full contract: phonevault/V40-NOTES.md. All earlier modes unchanged.
-run_started_utc: 2026-11-14T13:28:10Z
-workflow_run_number: 15
-workflow_run_id: 43599895057
+run_started_utc: 2026-11-14T14:02:26Z
+workflow_run_number: 16
+workflow_run_id: 43602751221
 workflow_run_attempt: 1
 mode: wake (push-triggered runs are always fresh; restore and all roundtrip modes are dispatch-only; birth and wake (v4.0 production) are dispatch-only)
 note: artifact transport is NOT the vault - DESIGN.md section 5 chunk_vault/HF wiring replaces it for real sessions (build step 3)
@@ -23,14 +24,14 @@ RUNNER_OS=Linux RUNNER_ARCH=X64 ImageOS=ubuntu24 ImageVersion=20261111.370.1
 Linux runnervm8axu0 7.0.0-1017-azure #17~24.04.1-Ubuntu SMP PREEMPT Thu Sep 24 18:46:57 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
 2
                total        used        free      shared  buff/cache   available
-Mem:           7.7Gi       889Mi       6.3Gi        44Mi       929Mi       6.9Gi
+Mem:           7.7Gi       896Mi       6.3Gi        44Mi       931Mi       6.9Gi
 Swap:          3.0Gi          0B       3.0Gi
 /dev/root        72G   60G   13G  83% /
-crw-rw---- 1 root kvm 10, 232 Nov 14 13:27 /dev/kvm
+crw-rw---- 1 root kvm 10, 232 Nov 14 14:02 /dev/kvm
 KVM_GATE: PRESENT
 ===== 0b kvm permissions (standard GitHub emulator step) =====
 KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
-crw-rw-rw- 1 root kvm 10, 232 Nov 14 13:28 /dev/kvm
+crw-rw-rw- 1 root kvm 10, 232 Nov 14 14:02 /dev/kvm
 kvm_touch_rc=0 (0 = runner user can open the device)
 
 ########## .pv-evidence-final/00c-disk-audit.txt ##########
@@ -56,41 +57,41 @@ removed_paths: /usr/share/dotnet /opt/hostedtoolcache/Python /opt/hostedtoolcach
 -- free space AFTER cleanup --
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/root        72G   49G   24G  68% /
-PV_FREE_KB_AFTER_AUDIT=24679916
+PV_FREE_KB_AFTER_AUDIT=24674920
 
 ########## .pv-evidence-final/00d-disk-c1.txt ##########
-disk guard (attempt C part 1 start): free_kb=19394620 floor_kb=2097152
+disk guard (attempt C part 1 start): free_kb=19389632 floor_kb=2097152
 /dev/root        72G   54G   19G  75% /
 DISK_GUARD=OK (attempt C part 1 start)
 
 ########## .pv-evidence-final/00e-disk-c2.txt ##########
-disk guard (attempt C part 2 start): free_kb=19394460 floor_kb=2097152
+disk guard (attempt C part 2 start): free_kb=19389472 floor_kb=2097152
 /dev/root        72G   54G   19G  75% /
 DISK_GUARD=OK (attempt C part 2 start)
 
 ########## .pv-evidence-final/00f-disk-s1.txt ##########
-disk guard (attempt S part 1 start): free_kb=19394300 floor_kb=2097152
+disk guard (attempt S part 1 start): free_kb=19389308 floor_kb=2097152
 /dev/root        72G   54G   19G  75% /
 DISK_GUARD=OK (attempt S part 1 start)
 
 ########## .pv-evidence-final/00g-disk-s2.txt ##########
-disk guard (attempt S part 2 start): free_kb=19394188 floor_kb=2097152
+disk guard (attempt S part 2 start): free_kb=19389376 floor_kb=2097152
 /dev/root        72G   54G   19G  75% /
 DISK_GUARD=OK (attempt S part 2 start)
 
 ########## .pv-evidence-final/00h-disk-birth.txt ##########
-disk guard (production birth start): free_kb=19394012 floor_kb=2097152
+disk guard (production birth start): free_kb=19389200 floor_kb=2097152
 /dev/root        72G   54G   19G  75% /
 DISK_GUARD=OK (production birth start)
 
 ########## .pv-evidence-final/00i-disk-wake.txt ##########
-disk guard (production wake part 1 start): free_kb=19393840 floor_kb=2097152
+disk guard (production wake part 1 start): free_kb=19389028 floor_kb=2097152
 /dev/root        72G   54G   19G  75% /
 DISK_GUARD=OK (production wake part 1 start)
 
 ########## .pv-evidence-final/00j-disk-wake2.txt ##########
-disk guard (production wake part 2 start): free_kb=15137484 floor_kb=2097152
-/dev/root        72G   58G   15G  80% /
+disk guard (production wake part 2 start): free_kb=14918640 floor_kb=2097152
+/dev/root        72G   58G   15G  81% /
 DISK_GUARD=OK (production wake part 2 start)
 
 ########## .pv-evidence-final/01-install.txt ##########
@@ -138,21 +139,21 @@ id: 30 or "pixel_6a"
 pixel_6_listed=1
 -- installed system-image dir --
 total 4364352
-drwxr-xr-x 3 runner runner       4096 Nov 14 13:29 .
-drwxr-xr-x 3 runner runner       4096 Nov 14 13:29 ..
--rw-r--r-- 1 runner runner   19603789 Nov 14 13:29 NOTICE.txt
--rw-r--r-- 1 runner runner        356 Nov 14 13:29 VerifiedBootParams.textproto
--rw-r--r-- 1 runner runner        689 Nov 14 13:29 advancedFeatures.ini
--rw-r--r-- 1 runner runner       5008 Nov 14 13:29 build.prop
-drwxr-xr-x 3 runner runner       4096 Nov 14 13:29 data
--rw-r--r-- 1 runner runner   18874368 Nov 14 13:29 encryptionkey.img
--rw-r--r-- 1 runner runner   17374688 Nov 14 13:29 kernel-ranchu
--rw-r--r-- 1 runner runner      18749 Nov 14 13:29 package.xml
--rw-r--r-- 1 runner runner    1820484 Nov 14 13:29 ramdisk.img
--rw-r--r-- 1 runner runner        357 Nov 14 13:29 source.properties
--rw-r--r-- 1 runner runner 4306501632 Nov 14 13:29 system.img
--rw-r--r-- 1 runner runner    1048576 Nov 14 13:29 userdata.img
--rw-r--r-- 1 runner runner  103809024 Nov 14 13:29 vendor.img
+drwxr-xr-x 3 runner runner       4096 Nov 14 14:03 .
+drwxr-xr-x 3 runner runner       4096 Nov 14 14:03 ..
+-rw-r--r-- 1 runner runner   19603789 Nov 14 14:03 NOTICE.txt
+-rw-r--r-- 1 runner runner        356 Nov 14 14:03 VerifiedBootParams.textproto
+-rw-r--r-- 1 runner runner        689 Nov 14 14:03 advancedFeatures.ini
+-rw-r--r-- 1 runner runner       5008 Nov 14 14:03 build.prop
+drwxr-xr-x 3 runner runner       4096 Nov 14 14:03 data
+-rw-r--r-- 1 runner runner   18874368 Nov 14 14:03 encryptionkey.img
+-rw-r--r-- 1 runner runner   17374688 Nov 14 14:03 kernel-ranchu
+-rw-r--r-- 1 runner runner      18749 Nov 14 14:03 package.xml
+-rw-r--r-- 1 runner runner    1820484 Nov 14 14:03 ramdisk.img
+-rw-r--r-- 1 runner runner        357 Nov 14 14:03 source.properties
+-rw-r--r-- 1 runner runner 4306501632 Nov 14 14:03 system.img
+-rw-r--r-- 1 runner runner    1048576 Nov 14 14:03 userdata.img
+-rw-r--r-- 1 runner runner  103809024 Nov 14 14:03 vendor.img
 -- sdkmanager --list_installed, system-images lines --
   system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
 ----- 2b create attempts (FULL avdmanager output in section 02b) -----
@@ -202,8 +203,8 @@ host sync done (host page cache flushed before tar)
 /dev/root        72G   54G   19G  75% /
 1.1M	/home/runner/.android/avd/factoryphone.avd
 total 1.1M
--rw-r--r-- 1 runner runner 3.5K Nov 14 13:29 config.ini
--rw-r--r-- 1 runner runner 1.0M Nov 14 13:29 userdata.img
+-rw-r--r-- 1 runner runner 3.5K Nov 14 14:03 config.ini
+-rw-r--r-- 1 runner runner 1.0M Nov 14 14:03 userdata.img
 
 ########## .pv-evidence-final/06-pack.txt ##########
 ===== 6 pack AVD state (artifact transport - NOT the vault) =====
@@ -219,333 +220,14 @@ mode=wake - production birth not applicable (birth mode only)
 
 ########## .pv-evidence-final/07b-wake.txt ##########
 ===== 7b production WAKE part 1 (v4.0): pinned + gated restore, capsule re-apply (wake mode only) =====
-pin_run_id_input=43597274647
+pin_run_id_input=43599895057
 wake rule (poisoned-shelf lesson, run No.9): NEVER newest-blind - pin_run_id names the birth run or the newest GOOD wake run; the pack is accepted only when its OWN certificate passes the gates below BEFORE extraction or boot.
-VAULT FETCH OK prefix=pkg-5fe9806a
+VAULT FETCH OK prefix=pkg-ae2c4dab
 vault_fetch_ok=1 (1 = from vault jasveerai92/phonevault-verify-v60test; 0 = artifact route below)
 -- v5.4: pack fetched from the HF vault - artifact download skipped --
--rw-r--r-- 1 runner runner 1.2G Nov 14 13:31 pv-wake-dl/phonevault-state.tar
+-rw-r--r-- 1 runner runner 1.3G Nov 14 14:06 pv-wake-dl/phonevault-state.tar
 -- CERTIFICATE GATE (BEFORE extraction or boot): the pack's own phonevault-version.txt must prove android_id present + marker_ok=1, capsule integrity (pv-capsule.tar re-hashed vs capsule_sha256) and disk integrity (largest userdata file re-hashed vs largest_userdata_sha256). Gate failure = WAKE: NOT EVALUATED, certificate printed --
 -- pinned pack's phonevault-version.txt (the certificate the verdict uses) --
-avd_name=factoryphone
-system_image=system-images;android-34;google_apis;x86_64
-emulator_version=Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)
-emulator_pkg_revision=37.2.13
-system_image_revision=14
-production=1
-session=7
-born_utc=2026-11-14T07:39:38Z
-packed_utc=2026-11-14T13:05:32Z
-android_id=6baedd5ca4a87e43
-marker_token=pv1-20261114074056-61f7b8f0
-marker_ok=1
-marker_guest_path=/data/local/tmp/phonevault-marker.txt
-phone=verify
-route=wake-v4.0
-identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)
-capsule_sha256=c59fc6d0cf012b05fde135f6b1081069ab915e0d5072b4ad5162a3f2c71604ca
-settings_secure_md5_birth=ec20567de6d222dcb7605052b34c712f
-datapersist_sentinel=planted
-userdata_posture=fstab-unencrypted-v60test
-v60test_state=absent
-capsule_accounts=absent
-largest_userdata_file=userdata-qemu.img.qcow2
-largest_userdata_size_bytes=1191313408
-largest_userdata_sha256=b7b88c3f9cf140be167ee0991fd93fee19709bb7562d965ee39992a209dd7729
-packed_file: userdata-qemu.img.qcow2 1191313408 bytes
-packed_file: userdata-qemu.img 6488064 bytes
-packed_file: encryptionkey.img.qcow2 1769472 bytes
-packed_file: encryptionkey.img 18874368 bytes
-packed_file: config.ini 3783 bytes
-packed_file: emulator-user.ini 113 bytes
-packed_file: hardware-qemu.ini 4211 bytes
-packed_file: pv-capsule.tar 14336 bytes
-packed_file: capsule-manifest.txt 310 bytes
-packed_file: phonevault-version.txt (this file)
-certificate values: android_id=6baedd5ca4a87e43 marker_ok=1 marker_token=pv1-20261114074056-61f7b8f0 marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=c59fc6d0cf012b05fde135f6b1081069ab915e0d5072b4ad5162a3f2c71604ca session=7 born_utc=2026-11-14T07:39:38Z largest_userdata_file=userdata-qemu.img.qcow2
-integrity: sha256(pv-capsule.tar from the pack)=c59fc6d0cf012b05fde135f6b1081069ab915e0d5072b4ad5162a3f2c71604ca vs certificate capsule_sha256=c59fc6d0cf012b05fde135f6b1081069ab915e0d5072b4ad5162a3f2c71604ca; sha256(userdata-qemu.img.qcow2 from the pack)=b7b88c3f9cf140be167ee0991fd93fee19709bb7562d965ee39992a209dd7729 vs certificate largest_userdata_sha256=b7b88c3f9cf140be167ee0991fd93fee19709bb7562d965ee39992a209dd7729
-certificate gate PASSED: android_id=6baedd5ca4a87e43 marker_ok=1 capsule + disk integrity match the certificate
--- process gate: a leftover qemu-system is cleared and verified gone first --
--- extract into a CLEAN HAND-MADE AVD folder (no avdmanager pre-create - the diagnosis clean-room rule) --
-untar_rc=0
-total 1.2G
--rw-r--r-- 1 runner runner  310 Nov 14 07:41 capsule-manifest.txt
--rw-r--r-- 1 runner runner 3.7K Nov 14 07:39 config.ini
--rw-r--r-- 1 runner runner  113 Nov 14 13:05 emulator-user.ini
--rw------- 1 runner runner  18M Nov 14 07:39 encryptionkey.img
--rw-r--r-- 1 runner runner 1.7M Nov 14 13:04 encryptionkey.img.qcow2
--rw-r--r-- 1 runner runner 4.2K Nov 14 13:01 hardware-qemu.ini
--rw-r--r-- 1 runner runner 1.5K Nov 14 13:05 phonevault-version.txt
--rw-r--r-- 1 runner runner  14K Nov 14 07:41 pv-capsule.tar
--rw------- 1 runner runner 6.2M Nov 14 07:39 userdata-qemu.img
--rw-r--r-- 1 runner runner 1.2G Nov 14 13:05 userdata-qemu.img.qcow2
--- wake boot (standard flags, -no-snapshot, NEVER -wipe-data) --
--- boot attempt 1 (extra flags: -no-snapshot) --
-emulator_pid=42496
-* daemon not running; starting now at tcp:5037
-* daemon started successfully
-wait_for_device_rc=0
-boot poll 1 (attempt 1): sys.boot_completed=''
-boot poll 2 (attempt 1): sys.boot_completed=''
-boot poll 3 (attempt 1): sys.boot_completed=''
-boot poll 4 (attempt 1): sys.boot_completed='1'
-boot_wait_result: sys.boot_completed=1 reached on attempt 1
-android_id_BEFORE_apply=d9898ec7d9f0caa9 (CONTROL reading, taken BEFORE any apply on purpose: the encryption wall - runs No.9/11 and the diagnosis proved the disk restore re-initialises /data, so this is expected NOT to be the certificate value; identity is applied next, by code)
-marker_BEFORE_apply (/data/local/tmp/phonevault-marker.txt)='<missing/empty>'
-adb_root_rc=0
-root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
-rooted=1
--- apply the capsule as root (BEFORE identity is read for the verdict): push the capsule tar FROM THE PACK, extract at /, then settings put LAST so the settings provider's own write is the final word --
-/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 103.0 MB/s (14336 bytes in 0.000s)
-capsule_push_rc=0
-capsule_extract_rc=0
--- r7 apply hygiene: SELinux contexts for the placed account files (the capsule tar records no contexts) + removal of stale -wal/-shm/-journal siblings boot 1 created next to its fresh account DBs, for any sibling the capsule itself does not carry (a stale journal must never be replayed over the placed DBs) --
-r7_restorecon_done
--rw-rw---- 1 system system u:object_r:system_data_file:s0  40960 2026-11-14 13:32 /data/system_ce/0/accounts_ce.db
--rw-rw---- 1 system system u:object_r:system_data_file:s0  65536 2026-11-14 13:32 /data/system_de/0/accounts_de.db
-ls: /data/system/sync/accounts.xml: No such file or directory
-settings_put_rc=0
-android_id_AFTER_apply=6baedd5ca4a87e43
-marker_AFTER_apply (/data/local/tmp/phonevault-marker.txt)=pv1-20261114074056-61f7b8f0 (expected: pv1-20261114074056-61f7b8f0)
--rw-r--r-- 1 runner runner 1367266 Nov 14 13:33 .pv-screencap.png
-wake part 1 complete - the guest stays BOOTED; part 2 reboots it and judges survival; handoff in .pv-evidence/pv40-wake-state.txt
-WAKE_STATE=PENDING
-CID=6baedd5ca4a87e43
-CTOKEN=pv1-20261114074056-61f7b8f0
-CMPATH=/data/local/tmp/phonevault-marker.txt
-CCAPSHA=c59fc6d0cf012b05fde135f6b1081069ab915e0d5072b4ad5162a3f2c71604ca
-CMD5=ec20567de6d222dcb7605052b34c712f
-CBORN=2026-11-14T07:39:38Z
-CSES=7
-CSENT=planted
-CTS60=absent
-CACCT=absent
-PRE_ID=d9898ec7d9f0caa9
-POST_ID=6baedd5ca4a87e43
-POST_MARKER=pv1-20261114074056-61f7b8f0
-
-########## .pv-evidence-final/07b2-live-egress.txt ##########
-===== 07b2 production WAKE live window + steady egress (v5.1) =====
--- steady egress (input egress=steady) --
--- WebShare pinned direct proxy - authorize this runner IP host-side --
-runner public ip: 57.151.91.163
-ip authorization list: http=200
-deleted stale ip authorization id=16288263 http=204 (204 = deleted)
-ip authorization create: http=201
-{"id":16288336,"ip_address":"57.151.91.163","created_at":"2026-11-14T13:33:13.079424Z","last_used_at":null} <- create response (truncated)
-pre-check: endpoint host='104.164.49.38' port='7693' (host/port only)
-pre-check: host is a numeric IP - no DNS lookup needed
-pre-check: TCP connect 104.164.49.38:7693 OK
-host probe: egress='<no answer>' expected='104.164.49.38' (diagnostics: curl_exit=56 http=000; curl said: curl: (56) CONNECT tunnel failed, response 402)
-host probe failed/mismatch - guest proxy NOT set; WARP next
--- WARP fallback --
-warp install/connect rc=0 (attempt 1; log tail:)
-Success
-Status update: Disconnected
-Reason: Manual Disconnection
-cloudflare trace after WARP: warp=on
-EGRESS: WARP (unsteady fallback - a shared Cloudflare pool IP near the runner region; steadiness degraded by design, Lane 2 grade D)
--- live view --
-LIVE: SKIPPED - live_view=no at dispatch
-
-########## .pv-evidence-final/07c-wake2.txt ##########
-===== 7c production WAKE part 2 (v4.3): app side-load, second reboot, identity verdict, state re-pack =====
-wake handoff read: android_id=6baedd5ca4a87e43 marker_token=pv1-20261114074056-61f7b8f0 marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=c59fc6d0cf012b05fde135f6b1081069ab915e0d5072b4ad5162a3f2c71604ca session=7 born_utc=2026-11-14T07:39:38Z control_pre_apply_id=d9898ec7d9f0caa9 post_apply_id=6baedd5ca4a87e43
--- DATA-PERSIST SELF-TEST (v5.9): sentinel planted in the guest at a fixed /data path by the PREVIOUS run's pack phase; read BEFORE any app install in this verdict phase. YES = /data content crossed the wake; NO = /data was re-initialised (only the identity capsule carried); UNGRADED = the restored pack predates the sentinel writer --
-DATA_PERSIST: NO (the restored session-7 pack planted a sentinel, but /data/local/tmp/pv-datapersist-sentinel.txt is absent or stale on this boot - /data was re-initialised on this wake; only the identity capsule carried over; raw read: '<missing/empty>')
--- V60-TEST POSTURE CHECK + STATE GRADE: guest crypto state first, then the items planted ONLY by the previous run's post-verdict state phase; all read BEFORE any app install in this run --
-POSTURE CHECK (guest): ro.crypto.state=unsupported ro.crypto.type=
-POSTURE CHECK (guest): vendor fstab /data line: /dev/block/vdc   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,reservedsize=128M,fsverity,latemount
-TESTSTATE: UNGRADED (the restored session-7 pack carries v60test_state!=planted - no state-phase expectation exists; state planted by THIS run's state phase is graded by the NEXT wake)
--- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --
-APP: SKIPPED - install_apps=no at dispatch
--- SECOND reboot (plain guest reboot): the run No.19 standard - a wake counts only if the applied identity survives it --
-reboot_rc=0
-wait_for_device_rc=0
-reboot poll 1: sys.boot_completed=''
-reboot poll 2: sys.boot_completed=''
-reboot poll 3: sys.boot_completed='1'
-reboot_wait_result: sys.boot_completed=1 reached
-android_id_AFTER_reboot2=6baedd5ca4a87e43
-marker_AFTER_reboot2 (/data/local/tmp/phonevault-marker.txt)=pv1-20261114074056-61f7b8f0
--- ACCOUNT-PERSIST GRADE (r7): the account list AMS serves AFTER capsule apply + the survival reboot; the expectation comes from the restored pack's certificate (capsule_accounts, host-verified at seal time) --
-ACCOUNT_PERSIST: UNGRADED (the restored session-7 pack carries capsule_accounts!=planted - no host-verified account plant was sealed into its capsule; the account phase of THIS run is graded by the NEXT wake; probes on this boot: google=ABSENT local=ABSENT)
--- DATA-PERSIST SELF-TEST (v5.9): planting the sentinel the NEXT wake will grade (fixed /data path; written while the guest is still up, before the graceful stop, so it rides this run's re-pack) --
-sentinel_write_rc=0
-sentinel readback: 'pv-datapersist session=8 planted_utc=2026-11-14T13:36:13Z run_id=43599895057'
-sentinel planted for session 8 (the outgoing pack's certificate will carry datapersist_sentinel=planted)
--- V60-TEST STATE PHASE: planting graded state AFTER the verdict phase, immediately before the graceful stop, so every item can only reach the next wake through this run's re-pack (with install_apps=no this phase is the ONLY install of the run) --
-teststate_marker_write_rc=0
-teststate marker readback: 'pv60-state session=8 planted_utc=2026-11-14T13:36:13Z run_id=43599895057'
-teststate_setting_write_rc=0
-teststate setting readback: 'session=8'
-Performing Streamed Install
-Success
-teststate_app_install_rc=0 (F-Droid.apk)
-TESTSTATE PLANT: app org.fdroid.fdroid installed by the state phase (APK sha256 verified against the repo manifest)
-TESTSTATE PLANT: COMPLETE (sdcard marker + global setting + app, each read back) - the outgoing certificate will carry v60test_state=planted
--- V60-TEST ACCOUNT PHASE (r11): synthetic-account mechanism test, capture + plant PROVEN LIVE under r9 (run 43594324780: adb-root-pull attempt 1 paircheck OK; host plant INSERT_OK + VERIFY_OK with matched DE/CE/system ids) - but the seal has now failed on the extended-capsule build check in TWO consecutive wakes, on a different item each time: r9 on the GMS entries, r10 (run 43597274647, sources printed present: gsf 1 MB, gms 30 MB, paircheck OK attempt 1) on settings_secure.xml. One assembly defect explains both: the extended capsule was built from a FRESH staging tree holding only account-phase items, while the identity files live in the INCOMING capsule restored that wake, so the check peeled off one missing item per run. r11 changes, confined to ASSEMBLY + CHECK: (1) MERGE CONSTRUCTION - the assembly base is the incoming capsule itself (/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: the pack member wake part 1 extracted from the verified pinned pack and pushed from that path for the apply), extracted as root into the staging tree before any overlay, so identity files are present BY CONSTRUCTION; the r10 cp -a pair for settings + marker is retired; the planted DB pair, the sync overlay and the r10 guest-root-tar GSF/GMS staging overlay onto that base, overwriting/adding by path; (2) FULL-TABLE CHECK - after assembly the phase prints a table of EVERY expected item with present/absent AND origin (incoming-capsule | phase-staged), then ONE verdict; any missing required item fails closed listing ALL of them at once. The r10 source-presence waiver for documented guest absence is kept (test lineage only; production does NOT inherit it - PROD-R11-DELTA.md). Capture, plant, DB verify, grading semantics unchanged from r10 --
--- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --
-restarting adbd as root
-adb_root_rc=0
-account capture root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
-ACCOUNT CAPTURE: adb root verified (uid=0 shell in this step)
-keystore probe (FIX-PLAN 2.4 - facts for the keystore question; the keystore is NOT carried by this capsule):
-persistent.sqlite
-timestamp
-vpnprofilestore.sqlite
-gms/gsf guest sizes:
-38	/data/data/com.google.android.gms
-1	/data/data/com.google.android.gsf
-/data/system_de/0/accounts_de.db 1000 1000 660
-/data/system_ce/0/accounts_ce.db 1000 1000 660
-stat: '/data/system/sync/accounts.xml': No such file or directory
--rw-rw---- 1 system system u:object_r:system_data_file:s0  40960 2026-11-14 13:32 /data/system_ce/0/accounts_ce.db
--rw-rw---- 1 system system u:object_r:system_data_file:s0  65536 2026-11-14 13:32 /data/system_de/0/accounts_de.db
--- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). The r8 ladder is removed: no guest-side snapshot open, no framework stop anywhere in the account path. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present), /data/system/sync/accounts.xml when present, and the GSF/GMS whole dirs, which enter the staging tree at assembly below via a guest root tar of the source paths (r11 - a plain tree pull does not preserve uid/gid/mode; the root tar does - it is the identity capsule's own tree method, pulled by adb like every capsule; the r7-r9 cp -a staging pair was retired after run 43594324780, where it delivered a capsule with no GMS entries and the build check failed the seal). Consistency argument: capture runs on an idle, settled guest (post-verdict, post-plants, no enrolment in flight); DB + wal + shm pulled as one set replay coherently on host open; the host PAIRCHECK (sqlite integrity_check + DE/CE (id,name,type) identity) is the verification gate - a torn pull fails the check and is re-pulled, never sealed --
--- adb-root pull attempt 1 of 3 --
-/data/system_de/0/accounts_de.db: 1 file pulled, 0 skipped. 5.6 MB/s (65536 bytes in 0.011s)
-/data/system_ce/0/accounts_ce.db: 1 file pulled, 0 skipped. 2.2 MB/s (40960 bytes in 0.018s)
-sync/accounts.xml: absent on this guest (no sync state yet) - not carried by this capture
-PVACCT paircheck integrity de: ok
-PVACCT paircheck integrity ce: ok
-PVACCT paircheck de accounts: 0 ce accounts: 0
-PVACCT_RESULT: PAIR_OK
-ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt 1, paircheck OK - integrity ok on both DBs, DE/CE (id,name,type) rows identical)
-ACCOUNT CAPTURE: verified via adb-root-pull on attempt 1 (the DB copies in pv-acct passed host paircheck; sync/accounts.xml: absent)
--- host-side plant (r11, unchanged from r8/r9): the two probes are inserted into the HOST copies only, mirroring AMS's own insert order (CE row first, DE row with the SAME id, dummy CE authtoken for the google-type probe). Nothing is pushed back to the guest's canonical DB paths in this design - the planted copies reach the next wake exclusively through the capsule --
-PVACCT schema de(before) tables: accounts,android_metadata,debug_table,grants,meta,shared_accounts,sqlite_sequence,visibility
-PVACCT schema de(before) accounts columns: _id,name,type,previous_name,last_password_entry_time_millis_epoch
-PVACCT schema ce(before) tables: accounts,android_metadata,authtokens,extras,sqlite_sequence
-PVACCT schema ce(before) accounts columns: _id,name,type,password
-PVACCT schema ce(before) authtokens columns: _id,accounts_id,type,authtoken
-PVACCT schema ce(before) extras columns: _id,accounts_id,key,value
-PVACCT inserted ce account id=1 name=pvmechtest@example.invalid type=com.google
-PVACCT inserted de account id=1
-PVACCT inserted ce account id=2 name=pvlocal@example.invalid type=com.phonevault.test
-PVACCT inserted de account id=2
-PVACCT authtoken row ensured for id=1 type=pvmechprobe
-PVACCT journal_mode after insert ce: delete
-PVACCT journal_mode after insert de: delete
-PVACCT verify name=pvmechtest@example.invalid type=com.google ce_id=1 de_id=1
-PVACCT verify name=pvlocal@example.invalid type=com.phonevault.test ce_id=2 de_id=2
-PVACCT_RESULT: VERIFY_OK
-PVACCT_RESULT: INSERT_OK
--- capsule assembly (r11, MERGE construction): the extended capsule is assembled ON TOP OF THE INCOMING CAPSULE, not rebuilt from a fresh staging tree. The incoming capsule is /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar on this host: wake part 1 extracted the verified pinned pack into the hand-made AVD folder (tar -xf of the pack into /home/runner/.android/avd/factoryphone.avd), gate-verified this file's sha256 against the certificate's capsule_sha256 BEFORE boot, and pushed it from exactly this path for the capsule apply - so at this point in the wake it is still the incoming capsule (this phase overwrites it only on the success path below), and its extracted form IS retained; no re-extraction from the pack is needed. The phase pushes it to the guest and extracts it as root into the staging tree FIRST (the tar records uid/gid/mode; the root extract restores them), so settings_secure.xml + the marker are present BY CONSTRUCTION. Overlays then land on that base by path: the planted DB copies (staging paths only, canonical recorded uid/gid/mode - they never touch the canonical DB paths), sync/accounts.xml when captured, and the GSF/GMS whole dirs via the r10 guest root tar (pv-dirs.tar, unchanged). The r10 cp -a pair that copied settings + marker from the guest's LIVE paths is retired: those live copies were unverified, and the capsule - the identity of record - is the correct source. The copy is live (the framework is never stopped); the DB pair - the graded content - is the paircheck-verified pull --
-ACCOUNT ASSEMBLY INCOMING CAPSULE: /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar sha256=c59fc6d0cf012b05fde135f6b1081069ab915e0d5072b4ad5162a3f2c71604ca (gate-verified against the certificate in wake part 1; this listing is the merge base and the origin evidence for the identity rows of the r11 table):
-data/system/users/0/settings_secure.xml
-data/local/tmp/phonevault-marker.txt
-/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 116.1 MB/s (14336 bytes in 0.000s)
-incoming_capsule_push_rc=0
--- account assembly source facts (r11, guest ls as root - kept from r10):
-drwx--x--x 20 u0_a128 u0_a128 4096 2026-11-14 13:34 /data/data/com.google.android.gms
-drwx------  7 u0_a128 u0_a128 4096 2026-11-14 13:33 /data/data/com.google.android.gsf
-1	/data/data/com.google.android.gsf
-38	/data/data/com.google.android.gms
-ACCOUNT ASSEMBLY SOURCE FACT: gsf=present gms=present (guest /data/data dirs as root; absent is a legitimate state for a never-enrolled guest - the r11 table below treats documented absence and staging loss differently)
-pv_base_extract_rc=0
--rw-rw-rw- 1 root   root      28 2026-11-14 07:40 /data/local/tmp/pv-capstage/data/local/tmp/phonevault-marker.txt
--rw------- 1 system system 11478 2026-11-14 07:40 /data/local/tmp/pv-capstage/data/system/users/0/settings_secure.xml
-pv-acct/accounts_de.db: 1 file pushed, 0 skipped. 1.1 MB/s (65536 bytes in 0.058s)
-pv-acct/accounts_ce.db: 1 file pushed, 0 skipped. 214.5 MB/s (40960 bytes in 0.000s)
--rw-rw---- 1 system system u:object_r:shell_data_file:s0  40960 2026-11-14 13:36 /data/local/tmp/pv-capstage/data/system_ce/0/accounts_ce.db
--rw-rw---- 1 system system u:object_r:shell_data_file:s0  65536 2026-11-14 13:36 /data/local/tmp/pv-capstage/data/system_de/0/accounts_de.db
--- account assembly dirs tar (r11, unchanged from r10): guest root tar of the present source dirs, extracted into the staging tree ON TOP OF the capsule base (the tar records uid/gid/mode; the root extract restores them; an explicitly named source dir yields at least its directory entry, so a present-but-empty dir still lands in the staging tree and in the capsule tar) --
-pv_dirs_tar_rc=0
--rw-rw-rw- 1 root root 38355456 2026-11-14 13:36 /data/local/tmp/pv-dirs.tar
-pv_dirs_extract_rc=0
--- account assembly staged result (r11):
-com.google.android.gms
-com.google.android.gsf
-1	/data/local/tmp/pv-capstage/data/data/com.google.android.gsf
-38	/data/local/tmp/pv-capstage/data/data/com.google.android.gms
-extended_capsule_tar_rc=0
-/data/local/tmp/pv-capsule.tar: 1 file pulled, 0 skipped. 43.4 MB/s (38482432 bytes in 0.845s)
-PVACCT verify name=pvmechtest@example.invalid type=com.google ce_id=1 de_id=1
-PVACCT verify name=pvlocal@example.invalid type=com.phonevault.test ce_id=2 de_id=2
-PVACCT_RESULT: VERIFY_OK
--- capsule manifest (r11): written BEFORE the full-table check so the table can carry the manifest row; its identity values are the incoming capsule's own (CID/CTOKEN/CMPATH/CMD5 were read by wake part 1 from the pinned pack's certificate, whose capsule_sha256 gate-verified the merge base above) --
-ACCOUNT PHASE: outgoing manifest written (capsule_sha256=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6)
--- account capsule listings used by the r11 table: the INCOMING listing (merge base) was printed at assembly; the MERGED listing follows (head -30):
-data/
-data/system/
-data/system/users/
-data/system/users/0/
-data/system/users/0/settings_secure.xml
-data/system/sync/
-data/local/
-data/local/tmp/
-data/local/tmp/phonevault-marker.txt
-data/system_de/
-data/system_de/0/
-data/system_de/0/accounts_de.db
-data/system_ce/
-data/system_ce/0/
-data/system_ce/0/accounts_ce.db
-data/data/
-data/data/com.google.android.gsf/
-data/data/com.google.android.gsf/cache/
-data/data/com.google.android.gsf/cache/oat_primary/
-data/data/com.google.android.gsf/cache/oat_primary/x86_64/
-data/data/com.google.android.gsf/cache/oat_primary/x86_64/GoogleServicesFramework.art
-data/data/com.google.android.gsf/code_cache/
-data/data/com.google.android.gsf/databases/
-data/data/com.google.android.gsf/databases/gservices.db
-data/data/com.google.android.gsf/databases/gservices.db-journal
-data/data/com.google.android.gsf/databases/googlesettings.db
-data/data/com.google.android.gsf/databases/googlesettings.db-journal
-data/data/com.google.android.gsf/files/
-data/data/com.google.android.gsf/files/profileInstalled
-data/data/com.google.android.gsf/files/security_token
-merged capsule listing: 683 entries in total
-ACCOUNT CAPSULE TABLE: settings_secure.xml | data/system/users/0/settings_secure.xml | PRESENT | origin: incoming-capsule
-ACCOUNT CAPSULE TABLE: phonevault-marker.txt | data/local/tmp/phonevault-marker.txt | PRESENT | origin: incoming-capsule
-ACCOUNT CAPSULE TABLE: accounts_de.db | data/system_de/0/accounts_de.db | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: accounts_ce.db | data/system_ce/0/accounts_ce.db | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: capsule-manifest.txt | pv-capsule-r11/capsule-manifest.txt (outgoing, beside the capsule tar) | PRESENT | origin: phase-staged (identity values carried from the incoming capsule)
-ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | WAIVED (absent on the guest at capture - nothing to carry) | origin: phase-staged
-ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE VERDICT: COMPLETE - every required item present (any WAIVED row is a documented guest absence, test lineage only)
-ACCOUNT PHASE: extended capsule MERGED from the incoming capsule (identity present by construction; full table COMPLETE) and host-verified (both probes present in the sealed DBs, ids matched across DE/CE; capture primitive: adb-root-pull) - the outgoing pack carries capsule_accounts=planted and capsule_sha256=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6; graded by the NEXT wake
-framework was never stopped in this run (capture primitive: adb-root-pull; the r8 snapshot/stop ladder was removed in r9; the r9 cp -a dir staging was replaced by the guest-root-tar method in r10; the r11 merge construction bases the assembly on the incoming capsule and retires the last cp -a pair) - no restart to perform or prove
-    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 2.441, hasFeatures, Account {name=accounts, type=com.google}, service_uca
-ACCOUNT PHASE CONTROL (r11 semantics, restated): the probes are NOT expected in the listing above - the plant is host-side, the guest's canonical account DBs were never written, and this run's AMS can only serve what it booted with. The in-run control for the plant is the host verification of the SEALED capsule above; the cross-wake control - what the NEXT wake's AMS does with the planted DBs after capsule apply + reboot 2 - is exactly that wake's ACCOUNT_PERSIST grade. An in-run probe listing is therefore neither expected nor required in r11 (this replaces the r7 control, which conflated insertion-acceptance with transport)
-OK: killing emulator, bye bye
-OK
-emu_kill_rc=0
-shutdown poll 1: still alive: qemu-system present
-graceful stop confirmed at poll 2
-host sync done
-pack certificate capsule_sha256 updated to the r7 re-captured capsule: 667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6
-/dev/root        72G   58G   15G  80% /
--- AVD folder listing BEFORE pack --
-total 1.3G
--rw------- 1 runner runner    0 Nov 14 13:36 bootcompleted.ini
--rw-r--r-- 1 runner runner  66M Nov 14 13:31 cache.img
--rw-r--r-- 1 runner runner 193K Nov 14 13:31 cache.img.qcow2
--rw-r--r-- 1 runner runner  627 Nov 14 13:36 capsule-manifest.txt
--rw-r--r-- 1 runner runner 3.7K Nov 14 07:39 config.ini
-drwxr-xr-x 3 runner runner 4.0K Nov 14 13:31 data
--rw-r--r-- 1 runner runner  282 Nov 14 13:31 emu-launch-params.txt
--rw-r--r-- 1 runner runner  113 Nov 14 13:36 emulator-user.ini
--rw------- 1 runner runner  18M Nov 14 07:39 encryptionkey.img
--rw-r--r-- 1 runner runner 1.7M Nov 14 13:35 encryptionkey.img.qcow2
--rw-r--r-- 1 runner runner 4.2K Nov 14 13:31 hardware-qemu.ini
--rw-r--r-- 1 runner runner 1.8M Nov 14 13:31 initrd
-drwxr-xr-x 3 runner runner 4.0K Nov 14 13:32 modem_simulator
--rw-r--r-- 1 runner runner    0 Nov 14 13:31 multiinstance.lock
--rw-r--r-- 1 runner runner   38 Nov 14 13:31 netsim.ini
--rw-r--r-- 1 runner runner 1.5K Nov 14 13:05 phonevault-version.txt
--rw-r--r-- 1 runner runner  37M Nov 14 13:36 pv-capsule.tar
--rw-r--r-- 1 runner runner    1 Nov 14 13:31 qemu-version.txt
--rw-r--r-- 1 runner runner    0 Nov 14 13:31 read-snapshot.txt
-drwxr-xr-x 2 runner runner 4.0K Nov 14 13:36 tmpAdbCmds
--rw------- 1 runner runner 6.2M Nov 14 07:39 userdata-qemu.img
--rw-r--r-- 1 runner runner 1.2G Nov 14 13:36 userdata-qemu.img.qcow2
--rw-r--r-- 1 runner runner    9 Nov 14 13:31 version_num.cache
--- phonevault-version.txt (in pack) --
 avd_name=factoryphone
 system_image=system-images;android-34;google_apis;x86_64
 emulator_version=Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)
@@ -581,14 +263,1057 @@ packed_file: hardware-qemu.ini 4211 bytes
 packed_file: pv-capsule.tar 38482432 bytes
 packed_file: capsule-manifest.txt 627 bytes
 packed_file: phonevault-version.txt (this file)
+certificate values: android_id=6baedd5ca4a87e43 marker_ok=1 marker_token=pv1-20261114074056-61f7b8f0 marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6 session=8 born_utc=2026-11-14T07:39:38Z largest_userdata_file=userdata-qemu.img.qcow2
+integrity: sha256(pv-capsule.tar from the pack)=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6 vs certificate capsule_sha256=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6; sha256(userdata-qemu.img.qcow2 from the pack)=37794f06db34062f4732c4ae9d871e4130d67e6c46bfb298a3c78a59643c391d vs certificate largest_userdata_sha256=37794f06db34062f4732c4ae9d871e4130d67e6c46bfb298a3c78a59643c391d
+certificate gate PASSED: android_id=6baedd5ca4a87e43 marker_ok=1 capsule + disk integrity match the certificate
+-- process gate: a leftover qemu-system is cleared and verified gone first --
+-- extract into a CLEAN HAND-MADE AVD folder (no avdmanager pre-create - the diagnosis clean-room rule) --
+untar_rc=0
+total 1.3G
+-rw-r--r-- 1 runner runner  627 Nov 14 13:36 capsule-manifest.txt
+-rw-r--r-- 1 runner runner 3.7K Nov 14 07:39 config.ini
+-rw-r--r-- 1 runner runner  113 Nov 14 13:36 emulator-user.ini
+-rw------- 1 runner runner  18M Nov 14 07:39 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.7M Nov 14 13:35 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.2K Nov 14 13:31 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.5K Nov 14 13:36 phonevault-version.txt
+-rw-r--r-- 1 runner runner  37M Nov 14 13:36 pv-capsule.tar
+-rw------- 1 runner runner 6.2M Nov 14 07:39 userdata-qemu.img
+-rw-r--r-- 1 runner runner 1.2G Nov 14 13:36 userdata-qemu.img.qcow2
+-- wake boot (standard flags, -no-snapshot, NEVER -wipe-data) --
+-- boot attempt 1 (extra flags: -no-snapshot) --
+emulator_pid=42502
+* daemon not running; starting now at tcp:5037
+* daemon started successfully
+wait_for_device_rc=0
+boot poll 1 (attempt 1): sys.boot_completed=''
+boot poll 2 (attempt 1): sys.boot_completed=''
+boot poll 3 (attempt 1): sys.boot_completed=''
+boot poll 4 (attempt 1): sys.boot_completed='1'
+boot_wait_result: sys.boot_completed=1 reached on attempt 1
+android_id_BEFORE_apply=3f7f5f3e712d9d61 (CONTROL reading, taken BEFORE any apply on purpose: the encryption wall - runs No.9/11 and the diagnosis proved the disk restore re-initialises /data, so this is expected NOT to be the certificate value; identity is applied next, by code)
+marker_BEFORE_apply (/data/local/tmp/phonevault-marker.txt)='<missing/empty>'
+adb_root_rc=0
+root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
+rooted=1
+-- apply the capsule as root (BEFORE identity is read for the verdict): push the capsule tar FROM THE PACK, extract at /, then settings put LAST so the settings provider's own write is the final word --
+/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 96.2 MB/s (38482432 bytes in 0.382s)
+capsule_push_rc=0
+capsule_extract_rc=0
+-- r7 apply hygiene: SELinux contexts for the placed account files (the capsule tar records no contexts) + removal of stale -wal/-shm/-journal siblings boot 1 created next to its fresh account DBs, for any sibling the capsule itself does not carry (a stale journal must never be replayed over the placed DBs) --
+r7_restorecon_done
+ls: /data/system/sync/accounts.xml: No such file or directory
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  40960 2026-11-14 13:36 /data/system_ce/0/accounts_ce.db
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  65536 2026-11-14 13:36 /data/system_de/0/accounts_de.db
+settings_put_rc=0
+android_id_AFTER_apply=6baedd5ca4a87e43
+marker_AFTER_apply (/data/local/tmp/phonevault-marker.txt)=pv1-20261114074056-61f7b8f0 (expected: pv1-20261114074056-61f7b8f0)
+-rw-r--r-- 1 runner runner 1366647 Nov 14 14:08 .pv-screencap.png
+wake part 1 complete - the guest stays BOOTED; part 2 reboots it and judges survival; handoff in .pv-evidence/pv40-wake-state.txt
+WAKE_STATE=PENDING
+CID=6baedd5ca4a87e43
+CTOKEN=pv1-20261114074056-61f7b8f0
+CMPATH=/data/local/tmp/phonevault-marker.txt
+CCAPSHA=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6
+CMD5=ec20567de6d222dcb7605052b34c712f
+CBORN=2026-11-14T07:39:38Z
+CSES=8
+CSENT=planted
+CTS60=planted
+CACCT=planted
+PRE_ID=3f7f5f3e712d9d61
+POST_ID=6baedd5ca4a87e43
+POST_MARKER=pv1-20261114074056-61f7b8f0
+
+########## .pv-evidence-final/07b2-live-egress.txt ##########
+===== 07b2 production WAKE live window + steady egress (v5.1) =====
+-- steady egress (input egress=steady) --
+-- WebShare pinned direct proxy - authorize this runner IP host-side --
+runner public ip: 172.174.126.230
+ip authorization list: http=200
+deleted stale ip authorization id=16288336 http=204 (204 = deleted)
+ip authorization create: http=201
+{"id":16288420,"ip_address":"172.174.126.230","created_at":"2026-11-14T14:08:04.448314Z","last_used_at":null} <- create response (truncated)
+pre-check: endpoint host='104.164.49.38' port='7693' (host/port only)
+pre-check: host is a numeric IP - no DNS lookup needed
+pre-check: TCP connect 104.164.49.38:7693 OK
+host probe: egress='<no answer>' expected='104.164.49.38' (diagnostics: curl_exit=56 http=000; curl said: curl: (56) CONNECT tunnel failed, response 402)
+host probe failed/mismatch - guest proxy NOT set; WARP next
+-- WARP fallback --
+warp install/connect rc=0 (attempt 1; log tail:)
+Success
+Status update: Disconnected
+Reason: Manual Disconnection
+cloudflare trace after WARP: warp=on
+EGRESS: WARP (unsteady fallback - a shared Cloudflare pool IP near the runner region; steadiness degraded by design, Lane 2 grade D)
+-- live view --
+LIVE: SKIPPED - live_view=no at dispatch
+
+########## .pv-evidence-final/07c-wake2.txt ##########
+===== 7c production WAKE part 2 (v4.3): app side-load, second reboot, identity verdict, state re-pack =====
+wake handoff read: android_id=6baedd5ca4a87e43 marker_token=pv1-20261114074056-61f7b8f0 marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6 session=8 born_utc=2026-11-14T07:39:38Z control_pre_apply_id=3f7f5f3e712d9d61 post_apply_id=6baedd5ca4a87e43
+-- DATA-PERSIST SELF-TEST (v5.9): sentinel planted in the guest at a fixed /data path by the PREVIOUS run's pack phase; read BEFORE any app install in this verdict phase. YES = /data content crossed the wake; NO = /data was re-initialised (only the identity capsule carried); UNGRADED = the restored pack predates the sentinel writer --
+DATA_PERSIST: NO (the restored session-8 pack planted a sentinel, but /data/local/tmp/pv-datapersist-sentinel.txt is absent or stale on this boot - /data was re-initialised on this wake; only the identity capsule carried over; raw read: '<missing/empty>')
+-- V60-TEST POSTURE CHECK + STATE GRADE: guest crypto state first, then the items planted ONLY by the previous run's post-verdict state phase; all read BEFORE any app install in this run --
+POSTURE CHECK (guest): ro.crypto.state=unsupported ro.crypto.type=
+POSTURE CHECK (guest): vendor fstab /data line: /dev/block/vdc   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,reservedsize=128M,fsverity,latemount
+TESTSTATE: sdcard_marker=MISSING global_setting=MISSING state_app=ABSENT (expected session 8; raw marker: '<missing/empty>'; raw setting: 'null')
+-- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --
+APP: SKIPPED - install_apps=no at dispatch
+-- SECOND reboot (plain guest reboot): the run No.19 standard - a wake counts only if the applied identity survives it --
+reboot_rc=0
+wait_for_device_rc=0
+reboot poll 1: sys.boot_completed=''
+reboot poll 2: sys.boot_completed=''
+reboot poll 3: sys.boot_completed='1'
+reboot_wait_result: sys.boot_completed=1 reached
+android_id_AFTER_reboot2=6baedd5ca4a87e43
+marker_AFTER_reboot2 (/data/local/tmp/phonevault-marker.txt)=pv1-20261114074056-61f7b8f0
+-- ACCOUNT-PERSIST GRADE (r7): the account list AMS serves AFTER capsule apply + the survival reboot; the expectation comes from the restored pack's certificate (capsule_accounts, host-verified at seal time) --
+    Account {name=pvmechtest@example.invalid, type=com.google}
+    Account {name=pvlocal@example.invalid, type=com.phonevault.test}
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.095, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.09, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.058, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.058, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.037, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.026, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.023, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected false, stats (0/0/0), lifetime 0.022, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+ACCOUNT_PERSIST: YES (google-type probe pvmechtest@example.invalid is listed by AMS after capsule apply + reboot 2 - the account capsule mechanism works for the Google account type; local-type probe pvlocal@example.invalid: PRESENT)
+-- DATA-PERSIST SELF-TEST (v5.9): planting the sentinel the NEXT wake will grade (fixed /data path; written while the guest is still up, before the graceful stop, so it rides this run's re-pack) --
+sentinel_write_rc=0
+sentinel readback: 'pv-datapersist session=9 planted_utc=2026-11-14T14:10:54Z run_id=43602751221'
+sentinel planted for session 9 (the outgoing pack's certificate will carry datapersist_sentinel=planted)
+-- V60-TEST STATE PHASE: planting graded state AFTER the verdict phase, immediately before the graceful stop, so every item can only reach the next wake through this run's re-pack (with install_apps=no this phase is the ONLY install of the run) --
+teststate_marker_write_rc=0
+teststate marker readback: 'pv60-state session=9 planted_utc=2026-11-14T14:10:54Z run_id=43602751221'
+teststate_setting_write_rc=0
+teststate setting readback: 'session=9'
+Performing Streamed Install
+Success
+teststate_app_install_rc=0 (F-Droid.apk)
+TESTSTATE PLANT: app org.fdroid.fdroid installed by the state phase (APK sha256 verified against the repo manifest)
+TESTSTATE PLANT: COMPLETE (sdcard marker + global setting + app, each read back) - the outgoing certificate will carry v60test_state=planted
+-- V60-TEST ACCOUNT PHASE (r11): synthetic-account mechanism test, capture + plant PROVEN LIVE under r9 (run 43594324780: adb-root-pull attempt 1 paircheck OK; host plant INSERT_OK + VERIFY_OK with matched DE/CE/system ids) - but the seal has now failed on the extended-capsule build check in TWO consecutive wakes, on a different item each time: r9 on the GMS entries, r10 (run 43597274647, sources printed present: gsf 1 MB, gms 30 MB, paircheck OK attempt 1) on settings_secure.xml. One assembly defect explains both: the extended capsule was built from a FRESH staging tree holding only account-phase items, while the identity files live in the INCOMING capsule restored that wake, so the check peeled off one missing item per run. r11 changes, confined to ASSEMBLY + CHECK: (1) MERGE CONSTRUCTION - the assembly base is the incoming capsule itself (/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: the pack member wake part 1 extracted from the verified pinned pack and pushed from that path for the apply), extracted as root into the staging tree before any overlay, so identity files are present BY CONSTRUCTION; the r10 cp -a pair for settings + marker is retired; the planted DB pair, the sync overlay and the r10 guest-root-tar GSF/GMS staging overlay onto that base, overwriting/adding by path; (2) FULL-TABLE CHECK - after assembly the phase prints a table of EVERY expected item with present/absent AND origin (incoming-capsule | phase-staged), then ONE verdict; any missing required item fails closed listing ALL of them at once. The r10 source-presence waiver for documented guest absence is kept (test lineage only; production does NOT inherit it - PROD-R11-DELTA.md). Capture, plant, DB verify, grading semantics unchanged from r10 --
+-- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --
+restarting adbd as root
+adb_root_rc=0
+account capture root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
+ACCOUNT CAPTURE: adb root verified (uid=0 shell in this step)
+keystore probe (FIX-PLAN 2.4 - facts for the keystore question; the keystore is NOT carried by this capsule):
+persistent.sqlite
+timestamp
+vpnprofilestore.sqlite
+gms/gsf guest sizes:
+44	/data/data/com.google.android.gms
+1	/data/data/com.google.android.gsf
+/data/system_de/0/accounts_de.db 1000 1000 660
+/data/system_ce/0/accounts_ce.db 1000 1000 660
+/data/system/sync/accounts.xml 1000 1000 600
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  40960 2026-11-14 13:36 /data/system_ce/0/accounts_ce.db
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  65536 2026-11-14 14:10 /data/system_de/0/accounts_de.db
+-- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). The r8 ladder is removed: no guest-side snapshot open, no framework stop anywhere in the account path. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present), /data/system/sync/accounts.xml when present, and the GSF/GMS whole dirs, which enter the staging tree at assembly below via a guest root tar of the source paths (r11 - a plain tree pull does not preserve uid/gid/mode; the root tar does - it is the identity capsule's own tree method, pulled by adb like every capsule; the r7-r9 cp -a staging pair was retired after run 43594324780, where it delivered a capsule with no GMS entries and the build check failed the seal). Consistency argument: capture runs on an idle, settled guest (post-verdict, post-plants, no enrolment in flight); DB + wal + shm pulled as one set replay coherently on host open; the host PAIRCHECK (sqlite integrity_check + DE/CE (id,name,type) identity) is the verification gate - a torn pull fails the check and is re-pulled, never sealed --
+-- adb-root pull attempt 1 of 3 --
+/data/system_de/0/accounts_de.db: 1 file pulled, 0 skipped. 19.1 MB/s (65536 bytes in 0.003s)
+/data/system_ce/0/accounts_ce.db: 1 file pulled, 0 skipped. 8.0 MB/s (40960 bytes in 0.005s)
+/data/system/sync/accounts.xml: 1 file pulled, 0 skipped. 0.1 MB/s (783 bytes in 0.009s)
+PVACCT paircheck integrity de: ok
+PVACCT paircheck integrity ce: ok
+PVACCT paircheck de accounts: 2 ce accounts: 2
+PVACCT paircheck account id=1 name=pvmechtest@example.invalid type=com.google
+PVACCT paircheck account id=2 name=pvlocal@example.invalid type=com.phonevault.test
+PVACCT_RESULT: PAIR_OK
+ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt 1, paircheck OK - integrity ok on both DBs, DE/CE (id,name,type) rows identical)
+ACCOUNT CAPTURE: verified via adb-root-pull on attempt 1 (the DB copies in pv-acct passed host paircheck; sync/accounts.xml: present)
+-- host-side plant (r11, unchanged from r8/r9): the two probes are inserted into the HOST copies only, mirroring AMS's own insert order (CE row first, DE row with the SAME id, dummy CE authtoken for the google-type probe). Nothing is pushed back to the guest's canonical DB paths in this design - the planted copies reach the next wake exclusively through the capsule --
+PVACCT schema de(before) tables: accounts,android_metadata,debug_table,grants,meta,shared_accounts,sqlite_sequence,visibility
+PVACCT schema de(before) accounts columns: _id,name,type,previous_name,last_password_entry_time_millis_epoch
+PVACCT schema ce(before) tables: accounts,android_metadata,authtokens,extras,sqlite_sequence
+PVACCT schema ce(before) accounts columns: _id,name,type,password
+PVACCT schema ce(before) authtokens columns: _id,accounts_id,type,authtoken
+PVACCT schema ce(before) extras columns: _id,accounts_id,key,value
+PVACCT ce account already present id=1 name=pvmechtest@example.invalid type=com.google
+PVACCT de account already present id=1
+PVACCT ce account already present id=2 name=pvlocal@example.invalid type=com.phonevault.test
+PVACCT de account already present id=2
+PVACCT authtoken row ensured for id=1 type=pvmechprobe
+PVACCT journal_mode after insert ce: delete
+PVACCT journal_mode after insert de: delete
+PVACCT verify name=pvmechtest@example.invalid type=com.google ce_id=1 de_id=1
+PVACCT verify name=pvlocal@example.invalid type=com.phonevault.test ce_id=2 de_id=2
+PVACCT_RESULT: VERIFY_OK
+PVACCT_RESULT: INSERT_OK
+-- capsule assembly (r11, MERGE construction): the extended capsule is assembled ON TOP OF THE INCOMING CAPSULE, not rebuilt from a fresh staging tree. The incoming capsule is /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar on this host: wake part 1 extracted the verified pinned pack into the hand-made AVD folder (tar -xf of the pack into /home/runner/.android/avd/factoryphone.avd), gate-verified this file's sha256 against the certificate's capsule_sha256 BEFORE boot, and pushed it from exactly this path for the capsule apply - so at this point in the wake it is still the incoming capsule (this phase overwrites it only on the success path below), and its extracted form IS retained; no re-extraction from the pack is needed. The phase pushes it to the guest and extracts it as root into the staging tree FIRST (the tar records uid/gid/mode; the root extract restores them), so settings_secure.xml + the marker are present BY CONSTRUCTION. Overlays then land on that base by path: the planted DB copies (staging paths only, canonical recorded uid/gid/mode - they never touch the canonical DB paths), sync/accounts.xml when captured, and the GSF/GMS whole dirs via the r10 guest root tar (pv-dirs.tar, unchanged). The r10 cp -a pair that copied settings + marker from the guest's LIVE paths is retired: those live copies were unverified, and the capsule - the identity of record - is the correct source. The copy is live (the framework is never stopped); the DB pair - the graded content - is the paircheck-verified pull --
+ACCOUNT ASSEMBLY INCOMING CAPSULE: /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar sha256=667fbcc45d2187eafd1bb50accc3a26ed4d8da4003585682123ae4a45df6b2a6 (gate-verified against the certificate in wake part 1; this listing is the merge base and the origin evidence for the identity rows of the r11 table):
+data/
+data/system/
+data/system/users/
+data/system/users/0/
+data/system/users/0/settings_secure.xml
+data/system/sync/
+data/local/
+data/local/tmp/
+data/local/tmp/phonevault-marker.txt
+data/system_de/
+data/system_de/0/
+data/system_de/0/accounts_de.db
+data/system_ce/
+data/system_ce/0/
+data/system_ce/0/accounts_ce.db
+data/data/
+data/data/com.google.android.gsf/
+data/data/com.google.android.gsf/cache/
+data/data/com.google.android.gsf/cache/oat_primary/
+data/data/com.google.android.gsf/cache/oat_primary/x86_64/
+data/data/com.google.android.gsf/cache/oat_primary/x86_64/GoogleServicesFramework.art
+data/data/com.google.android.gsf/code_cache/
+data/data/com.google.android.gsf/databases/
+data/data/com.google.android.gsf/databases/gservices.db
+data/data/com.google.android.gsf/databases/gservices.db-journal
+data/data/com.google.android.gsf/databases/googlesettings.db
+data/data/com.google.android.gsf/databases/googlesettings.db-journal
+data/data/com.google.android.gsf/files/
+data/data/com.google.android.gsf/files/profileInstalled
+data/data/com.google.android.gsf/files/security_token
+data/data/com.google.android.gsf/shared_prefs/
+data/data/com.google.android.gsf/shared_prefs/CheckinService.xml
+data/data/com.google.android.gms/
+data/data/com.google.android.gms/cache/
+data/data/com.google.android.gms/cache/oat_primary/
+data/data/com.google.android.gms/cache/oat_primary/x86_64/
+data/data/com.google.android.gms/cache/oat_primary/x86_64/PrebuiltGmsCore.art
+data/data/com.google.android.gms/cache/autofill_infinite_data_cache/
+data/data/com.google.android.gms/cache/autofill_infinite_data_cache/infinite_data_cache
+data/data/com.google.android.gms/cache/autofill_infinite_data_cache/infinite_data_cache-journal
+data/data/com.google.android.gms/cache/gaia-discovery.lck
+data/data/com.google.android.gms/cache/dsm/
+data/data/com.google.android.gms/cache/dsm/dsm.0
+data/data/com.google.android.gms/cache/ftc/
+data/data/com.google.android.gms/cache/fsdsc/
+data/data/com.google.android.gms/cache/cfpc1/
+data/data/com.google.android.gms/cache/cronet-cache/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/version
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/prefs/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/prefs/local_prefs.json
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/disk_cache/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/disk_cache/index
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/disk_cache/index-dir/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.persistent/disk_cache/index-dir/the-real-index
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/version
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/prefs/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/prefs/local_prefs.json
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/disk_cache/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/disk_cache/index
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/disk_cache/index-dir/
+data/data/com.google.android.gms/cache/cronet-cache/com.google.android.gms.unstable/disk_cache/index-dir/the-real-index
+data/data/com.google.android.gms/cache/httpclient_tmp/
+data/data/com.google.android.gms/cache/httpclient_tmp/directory025.pb
+data/data/com.google.android.gms/cache/nearby_bluetooth_metadata/
+data/data/com.google.android.gms/code_cache/
+data/data/com.google.android.gms/files/
+data/data/com.google.android.gms/files/safeboot_restarts/
+data/data/com.google.android.gms/files/safeboot_restarts/1794663161358
+data/data/com.google.android.gms/files/safeboot_restarts/1794663208264
+data/data/com.google.android.gms/files/safeboot_restarts/1794663354017
+data/data/com.google.android.gms/files/safeboot_restarts/1794663397672
+data/data/com.google.android.gms/files/clearcut/
+data/data/com.google.android.gms/files/clearcut/funnel
+data/data/com.google.android.gms/files/clearcut/0/
+data/data/com.google.android.gms/files/clearcut/0/LATIN_IME/
+data/data/com.google.android.gms/files/clearcut/0/GOOGLE_KEYBOARD_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_IME_ANDROID_PRIMES/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_CONTACTS_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/CLIENT_LOGGING_PROD/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_CONTACTS_PRIMES/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_GSA_ANDROID_PRIMES/
+data/data/com.google.android.gms/files/clearcut/0/GOOGLETTS/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_GSA/
+data/data/com.google.android.gms/files/clearcut/0/GOOGLETTS_ANDROID_PRIMES/
+data/data/com.google.android.gms/files/clearcut/0/CONSTELLATION/
+data/data/com.google.android.gms/files/clearcut/0/GMS_CORE_PEOPLE/
+data/data/com.google.android.gms/files/clearcut/0/GMS_CORE_PEOPLE/1589757687/
+data/data/com.google.android.gms/files/clearcut/0/GMS_CORE_PEOPLE/1589757687/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/GMS_CORE_PEOPLE/1589757687/1794663316606.NONE
+data/data/com.google.android.gms/files/clearcut/0/PROXIMITY_AUTH_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/PROXIMITY_AUTH_COUNTERS/-46570075/
+data/data/com.google.android.gms/files/clearcut/0/PROXIMITY_AUTH_COUNTERS/-46570075/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/PROXIMITY_AUTH_COUNTERS/-46570075/1794663315215.NONE
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_DIALER/
+data/data/com.google.android.gms/files/clearcut/0/BUSINESS_VOICE/
+data/data/com.google.android.gms/files/clearcut/0/BUSINESS_VOICE/1469150511/
+data/data/com.google.android.gms/files/clearcut/0/BUSINESS_VOICE/1469150511/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/BUSINESS_VOICE/1469150511/1794663308087.NONE
+data/data/com.google.android.gms/files/clearcut/0/BUSINESS_VOICE/1002173617/
+data/data/com.google.android.gms/files/clearcut/0/BUSINESS_VOICE/1002173617/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/BUSINESS_VOICE/1002173617/1794663308087.NONE
+data/data/com.google.android.gms/files/clearcut/0/GMS_CORE/
+data/data/com.google.android.gms/files/clearcut/0/DIGITAL_CAR_KEY_ANDROID/
+data/data/com.google.android.gms/files/clearcut/0/CHIME/
+data/data/com.google.android.gms/files/clearcut/0/CLEARCUT_LOG_LOSS/
+data/data/com.google.android.gms/files/clearcut/0/CONTEXT_MANAGER/
+data/data/com.google.android.gms/files/clearcut/0/DL_FONTS/
+data/data/com.google.android.gms/files/clearcut/0/EASY_UNLOCK_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/GMAIL_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/GMAIL_ANDROID_PRIMES/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING/-1938563830/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING/-1938563830/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING/-1938563830/1794663234291.NONE
+data/data/com.google.android.gms/files/clearcut/0/BUGLE_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/BUGLE_COUNTERS/658263902/
+data/data/com.google.android.gms/files/clearcut/0/BUGLE_COUNTERS/658263902/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/BUGLE_COUNTERS/658263902/1794663234296.NONE
+data/data/com.google.android.gms/files/clearcut/0/BUGLE_COUNTERS/-1392638961/
+data/data/com.google.android.gms/files/clearcut/0/BUGLE_COUNTERS/-1392638961/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/BUGLE_COUNTERS/-1392638961/1794663277430.NONE
+data/data/com.google.android.gms/files/clearcut/0/CARRIER_SERVICES/
+data/data/com.google.android.gms/files/clearcut/0/CARRIER_SERVICES/1246503716/
+data/data/com.google.android.gms/files/clearcut/0/CARRIER_SERVICES/1246503716/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/CARRIER_SERVICES/1246503716/1794663235308.NONE
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ANDROID_GROWTH/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ANDROID_GROWTH/-466423995/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ANDROID_GROWTH/-466423995/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ANDROID_GROWTH/-466423995/1794663295700.NONE
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING_PRIMES/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING_PRIMES/-81664271/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING_PRIMES/-81664271/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING_PRIMES/-81664271/1794663235875.NONE
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING_PRIMES/1739269480/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING_PRIMES/1739269480/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_MESSAGING_PRIMES/1739269480/1794663242383.NONE
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ONEGOOGLE_ANDROID/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ONEGOOGLE_ANDROID/-1545676168/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ONEGOOGLE_ANDROID/-1545676168/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ONEGOOGLE_ANDROID/-1545676168/1794663301455.NONE
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ONEGOOGLE_ANDROID/124443308/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ONEGOOGLE_ANDROID/124443308/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ONEGOOGLE_ANDROID/124443308/1794663296253.NONE
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_CHECKIN_METRICS_LOG/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_DISCOVER_GSA/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_DISCOVER_GSA/-958676622/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_DISCOVER_GSA/-958676622/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_DISCOVER_GSA/-958676622/1794663303233.NONE
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_NGA/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_AUTH/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_OTA/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_GMAIL/
+data/data/com.google.android.gms/files/clearcut/0/ICING/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_BACKUP/
+data/data/com.google.android.gms/files/clearcut/0/MAGICTETHER_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/MATCHSTICK/
+data/data/com.google.android.gms/files/clearcut/0/ULR/
+data/data/com.google.android.gms/files/clearcut/0/ANDROID_CHECKIN_EVENT_LOG/
+data/data/com.google.android.gms/files/clearcut/0/WESTWORLD_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_ANDROID_GSA/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_GCM/
+data/data/com.google.android.gms/files/clearcut/0/PSEUDONYMOUS_ID_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/0/PSEUDONYMOUS_ID_COUNTERS/1713178328/
+data/data/com.google.android.gms/files/clearcut/0/PSEUDONYMOUS_ID_COUNTERS/1713178328/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/PSEUDONYMOUS_ID_COUNTERS/1713178328/1794663299288.NONE
+data/data/com.google.android.gms/files/clearcut/0/PSEUDONYMOUS_ID_COUNTERS/1085578877/
+data/data/com.google.android.gms/files/clearcut/0/PSEUDONYMOUS_ID_COUNTERS/1085578877/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/PSEUDONYMOUS_ID_COUNTERS/1085578877/1794663309790.NONE
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_LOCATION/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_LOCATION/-1233733460/
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_LOCATION/-1233733460/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/0/STREAMZ_LOCATION/-1233733460/1794663301617.NONE
+data/data/com.google.android.gms/files/clearcut/2/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/480099789/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/480099789/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/480099789/1794663226917.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/861100228/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/861100228/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/861100228/1794663277400.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/-824553200/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/-824553200/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/-824553200/1794663291447.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/718082933/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/718082933/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/718082933/1794663293350.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/1159467224/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/1159467224/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/1159467224/1794663299222.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/626038209/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/626038209/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/626038209/1794663300900.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/1985573588/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/1985573588/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/1985573588/1794663308110.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/-638239627/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/-638239627/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE/-638239627/1794663310095.NONE
+data/data/com.google.android.gms/files/clearcut/2/CLEARCUT_LOG_LOSS/
+data/data/com.google.android.gms/files/clearcut/2/CLEARCUT_LOG_LOSS/1291345235/
+data/data/com.google.android.gms/files/clearcut/2/CLEARCUT_LOG_LOSS/1291345235/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/CLEARCUT_LOG_LOSS/1291345235/1794663230411.NONE
+data/data/com.google.android.gms/files/clearcut/2/CLEARCUT_LOG_LOSS/226484629/
+data/data/com.google.android.gms/files/clearcut/2/CLEARCUT_LOG_LOSS/226484629/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/CLEARCUT_LOG_LOSS/226484629/1794663277642.NONE
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE_COUNTERS/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE_COUNTERS/601718675/
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE_COUNTERS/601718675/play_logger_context.pb
+data/data/com.google.android.gms/files/clearcut/2/PHENOTYPE_COUNTERS/601718675/1794663248316.NONE
+data/data/com.google.android.gms/files/clearcut/UploadLogResult.pb.lock
+data/data/com.google.android.gms/files/clearcut/internal_events.pb
+data/data/com.google.android.gms/files/location/
+data/data/com.google.android.gms/files/location/shared/
+data/data/com.google.android.gms/files/location/shared/emergencyalert.pb.lock
+data/data/com.google.android.gms/files/location/shared/emergencyalert.pb
+data/data/com.google.android.gms/files/location/shared/GeofencerPeriodStatsPersister-PersistedGeofencerPeriodStats.pb
+data/data/com.google.android.gms/files/blockstore/
+data/data/com.google.android.gms/files/blockstore/shared/
+data/data/com.google.android.gms/files/blockstore/shared/schema.pb
+data/data/com.google.android.gms/files/AppDataSearch/
+data/data/com.google.android.gms/files/AppDataSearch/main/
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.docids
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/compact_status
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.perdocdata
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.cscoring
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.docs
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tagacct.tags.h
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tagacct.tags.n
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tagacct.tags.x
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tagacct.tags.s
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tagacct.tags.deleted
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tagacct.counts
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.urifps.h
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.urifps.n
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.urifps.x
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.urifps.s
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.urifps.deleted
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.usage
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.delusage
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lexicon.h
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lexicon.n
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lexicon.x
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lexicon.s
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lexicon.deleted
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.display.h
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.display.n
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.display.x
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.display.s
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.display.deleted
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.index
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.h
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.n
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.x
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.s
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.deleted
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.display.h
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.display.n
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.display.x
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.display.s
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.display.deleted
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.hb
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.status
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.status.flushed
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tag.corpusid-0
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.prop.2
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.prop.0
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tag.deleted
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/ds.tag.corpusid-5
+data/data/com.google.android.gms/files/AppDataSearch/main/cur/idx.lite.lexicon.prop.7
+data/data/com.google.android.gms/files/AppDataSearch/main/main-corpus-scratch-data.tmp
+data/data/com.google.android.gms/files/auth.authzen.store.transactions_v2
+data/data/com.google.android.gms/files/nlp_ck
+data/data/com.google.android.gms/files/scheduler/
+data/data/com.google.android.gms/files/scheduler/shared/
+data/data/com.google.android.gms/files/scheduler/shared/DataStore.pb
+data/data/com.google.android.gms/files/cp_state
+data/data/com.google.android.gms/files/matchstick/
+data/data/com.google.android.gms/files/matchstick/shared/
+data/data/com.google.android.gms/files/matchstick/shared/DataStore.pb.lock
+data/data/com.google.android.gms/files/matchstick/shared/DataStore.pb
+data/data/com.google.android.gms/files/nearby/
+data/data/com.google.android.gms/files/nearby/sharing/
+data/data/com.google.android.gms/files/nearby/sharing/nearby_sharing_default_settings/
+data/data/com.google.android.gms/files/nearby/sharing/nearby_sharing_default_settings/nearby_sharing_account_metadata
+data/data/com.google.android.gms/files/fonts/
+data/data/com.google.android.gms/files/fonts/opentype/
+data/data/com.google.android.gms/files/fonts/opentype/Google_Sans_Text-400-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/opentype/Google_Sans-400-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/opentype/Google_Sans-500-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/opentype/Google_Sans-700-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/opentype/Noto_Color_Emoji_Compat-400-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/opentype/Google_Sans_Display-400-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/opentype/Google_Sans_Text-500-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/opentype/Google_Sans_Text-700-100_0-0_0.ttf
+data/data/com.google.android.gms/files/fonts/directory/
+data/data/com.google.android.gms/files/fonts/directory/25/
+data/data/com.google.android.gms/files/fonts/directory/25/directory.pb
+data/data/com.google.android.gms/files/fonts/directory/25/directory.bin
+data/data/com.google.android.gms/files/fonts/signature/
+data/data/com.google.android.gms/files/d2d_restore_data/
+data/data/com.google.android.gms/files/phenotype/
+data/data/com.google.android.gms/files/phenotype/shared/
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.personalsafety.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.fonts.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.libraries.consentverifier#com.google.android.gms.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.time#com.google.android.gms.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.trustlet_onbody.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.appintegrity.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.tron.metrics.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.gmscompliance.gservices.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.auth.easyunlock.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.dtdi#com.google.android.gms.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.geotimezone.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.rcs.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.maps#com.google.android.gms.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.magictether.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.phonesky_recovery.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.vision.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.client_error_logging.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.reminders.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.trustagent.activeunlock.primary#com.google.android.gms.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.inappreach#com.google.android.gms.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.trustlet_place.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.semanticlocation.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.auth_api_phone.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.auth_api_proxy.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.platformconfigurator.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.romanesco.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.nnapi.drivermanager.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.accountsettings.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.backup.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.auth_account.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.family.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.auth.blockstore.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.smart_profile.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.location.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.growth.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.notifications.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.nearby.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.tapandpay.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.places.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.auth.proximity.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.signin.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.auth_authzen.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.update.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.libraries.surveys#com.google.android.gms.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.wallet.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.presencemanager.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.wearable.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.icing.mdd.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.icing.mdh.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.firebase.auth.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.herrevad.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.appdoctor.pb
+data/data/com.google.android.gms/files/phenotype/shared/com.google.android.gms.ads.pb.mobstore_tmp-3598-142-1794663317054-43
+data/data/com.google.android.gms/files/icing_apps_corpus_component_names.txt
+data/data/com.google.android.gms/files/icing_apps_corpus_entries.bin
+data/data/com.google.android.gms/files/google_app_measurement.db
+data/data/com.google.android.gms/files/fcm_queued_messages.ldb/
+data/data/com.google.android.gms/files/fcm_queued_messages.ldb/LOG
+data/data/com.google.android.gms/files/fcm_queued_messages.ldb/LOCK
+data/data/com.google.android.gms/files/fcm_queued_messages.ldb/000003.log
+data/data/com.google.android.gms/files/fcm_queued_messages.ldb/CURRENT
+data/data/com.google.android.gms/files/fcm_queued_messages.ldb/MANIFEST-000002
+data/data/com.google.android.gms/files/nearby-fast-pair/
+data/data/com.google.android.gms/files/nearby-fast-pair/nearby_fast_pair_item_cache.db/
+data/data/com.google.android.gms/files/nearby-fast-pair/nearby_fast_pair_item_cache.db/LOG
+data/data/com.google.android.gms/files/nearby-fast-pair/nearby_fast_pair_item_cache.db/LOCK
+data/data/com.google.android.gms/files/nearby-fast-pair/nearby_fast_pair_item_cache.db/000003.log
+data/data/com.google.android.gms/files/nearby-fast-pair/nearby_fast_pair_item_cache.db/CURRENT
+data/data/com.google.android.gms/files/nearby-fast-pair/nearby_fast_pair_item_cache.db/MANIFEST-000002
+data/data/com.google.android.gms/files/nearby-discovery/
+data/data/com.google.android.gms/files/nearby-discovery/nearby_discovery_item_cache.db/
+data/data/com.google.android.gms/files/nearby-discovery/nearby_discovery_item_cache.db/LOG
+data/data/com.google.android.gms/files/nearby-discovery/nearby_discovery_item_cache.db/LOCK
+data/data/com.google.android.gms/files/nearby-discovery/nearby_discovery_item_cache.db/000003.log
+data/data/com.google.android.gms/files/nearby-discovery/nearby_discovery_item_cache.db/CURRENT
+data/data/com.google.android.gms/files/nearby-discovery/nearby_discovery_item_cache.db/MANIFEST-000002
+data/data/com.google.android.gms/files/geofencer_ks
+data/data/com.google.android.gms/files/backoff.txt
+data/data/com.google.android.gms/files/.a
+data/data/com.google.android.gms/files/geofencer_state_list
+data/data/com.google.android.gms/files/com.google.android.gms.auth.be.change.AccountsChange
+data/data/com.google.android.gms/files/checkin_id_token
+data/data/com.google.android.gms/files/nearby_messages/
+data/data/com.google.android.gms/files/apps_3p_corpus_component_names.txt
+data/data/com.google.android.gms/files/folsom/
+data/data/com.google.android.gms/files/folsom/shared/
+data/data/com.google.android.gms/files/folsom/shared/FolsomKeyStore.pb
+data/data/com.google.android.gms/files/auth_folsom/
+data/data/com.google.android.gms/files/auth_folsom/signed_certificates
+data/data/com.google.android.gms/files/semanticlocation/
+data/data/com.google.android.gms/files/semanticlocation/shared/
+data/data/com.google.android.gms/files/semanticlocation/shared/semanticlocation_settings.pb.lock
+data/data/com.google.android.gms/files/semanticlocation/shared/semanticlocation_settings.pb
+data/data/com.google.android.gms/files/gmscore_global_dirs.txt
+data/data/com.google.android.gms/files/gmscompliance/
+data/data/com.google.android.gms/files/gmscompliance/shared/
+data/data/com.google.android.gms/files/gmscompliance/shared/cache.pb
+data/data/com.google.android.gms/files/udcmobstoreprivate/
+data/data/com.google.android.gms/files/udcmobstoreprivate/shared/
+data/data/com.google.android.gms/files/udcmobstoreprivate/shared/sync_metadata.pb.lock
+data/data/com.google.android.gms/files/udcmobstoreprivate/shared/sync_metadata.pb
+data/data/com.google.android.gms/files/default_ranker.tflite
+data/data/com.google.android.gms/files/default_segmenter.tflite
+data/data/com.google.android.gms/files/default_model_bundle_metadata.pb
+data/data/com.google.android.gms/files/autofill/
+data/data/com.google.android.gms/files/autofill/shared/
+data/data/com.google.android.gms/files/autofill/shared/AutofillLocalSettings.pb.lock
+data/data/com.google.android.gms/files/locationsharingreporter/
+data/data/com.google.android.gms/files/locationsharingreporter/shared/
+data/data/com.google.android.gms/files/locationsharingreporter/shared/Reporting.Status.pb.lock
+data/data/com.google.android.gms/files/locationsharingreporter/shared/Reporting.RequestStore.pb.lock
+data/data/com.google.android.gms/files/locationsharingreporter/shared/Reporting.RequestStore.pb
+data/data/com.google.android.gms/files/thunderbird/
+data/data/com.google.android.gms/files/thunderbird/shared/
+data/data/com.google.android.gms/files/thunderbird/shared/thunderbird_settings.pb.lock
+data/data/com.google.android.gms/files/mobstore_salt.pb
+data/data/com.google.android.gms/files/platformconfigurator/
+data/data/com.google.android.gms/files/platformconfigurator/shared/
+data/data/com.google.android.gms/files/platformconfigurator/shared/registered_namespaces.pb
+data/data/com.google.android.gms/files/unpacked/
+data/data/com.google.android.gms/files/unpacked/shared/
+data/data/com.google.android.gms/files/unpacked/shared/cld3model/
+data/data/com.google.android.gms/files/unpacked/shared/cld3model/cld3-model-0001
+data/data/com.google.android.gms/files/westworld/
+data/data/com.google.android.gms/files/westworld/shared/
+data/data/com.google.android.gms/files/westworld/shared/westworld_metadata_store.pb
+data/data/com.google.android.gms/files/mdi_download/
+data/data/com.google.android.gms/files/mdi_download/shared/
+data/data/com.google.android.gms/files/mdi_download/shared/LoggingState.pb
+data/data/com.google.android.gms/files/migrate_dir/
+data/data/com.google.android.gms/files/migrate_dir/d2d_backup_data/
+data/data/com.google.android.gms/app_chimera/
+data/data/com.google.android.gms/shared_prefs/
+data/data/com.google.android.gms/shared_prefs/gms_chimera_phenotype_flags.xml
+data/data/com.google.android.gms/shared_prefs/QosTierPref.xml
+data/data/com.google.android.gms/shared_prefs/com.google.firebase.auth.instantValidator.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.measurement.prefs.xml
+data/data/com.google.android.gms/shared_prefs/adid_settings.xml
+data/data/com.google.android.gms/shared_prefs/GmsBackupTransport.backupScheduler.xml
+data/data/com.google.android.gms/shared_prefs/google_ads_flags.xml
+data/data/com.google.android.gms/shared_prefs/social.package_doritos.xml
+data/data/com.google.android.gms/shared_prefs/event_attestation_settings.xml
+data/data/com.google.android.gms/shared_prefs/DeviceConfigUtils.xml
+data/data/com.google.android.gms/shared_prefs/google_cast.xml
+data/data/com.google.android.gms/shared_prefs/AppDataSearch-main-icing-settings.xml
+data/data/com.google.android.gms/shared_prefs/fastpair_common_preferences.xml
+data/data/com.google.android.gms/shared_prefs/CAST_ACTIVE_NETWORK_MAP.xml
+data/data/com.google.android.gms/shared_prefs/PREF_CAST_SENDER_NONCE.xml
+data/data/com.google.android.gms/shared_prefs/nearbymediums:devicepreference.xml
+data/data/com.google.android.gms/shared_prefs/PREF_CAST_SENDER_ID.xml
+data/data/com.google.android.gms/shared_prefs/auth.account.visibility.whitelist.prefs.xml
+data/data/com.google.android.gms/shared_prefs/constellation_prefs.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.appid.xml
+data/data/com.google.android.gms/shared_prefs/AppDataSearch-main-config.xml
+data/data/com.google.android.gms/shared_prefs/ULR_PERSISTENT_PREFS.xml
+data/data/com.google.android.gms/shared_prefs/LOCATION_REPORTING.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_shared_files.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_groups.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_group_key_properties.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_manager_metadata.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_migrations.xml
+data/data/com.google.android.gms/shared_prefs/Checkin.xml
+data/data/com.google.android.gms/shared_prefs/DownloadService.xml
+data/data/com.google.android.gms/shared_prefs/mdm.xml
+data/data/com.google.android.gms/shared_prefs/coreanalyticsprefs.xml
+data/data/com.google.android.gms/shared_prefs/icing_internal_corpora_prefs.xml
+data/data/com.google.android.gms/shared_prefs/proxy-apps-corpus.xml
+data/data/com.google.android.gms/shared_prefs/EventLogChimeraService.xml
+data/data/com.google.android.gms/shared_prefs/usage_stats_manager_prefs.xml
+data/data/com.google.android.gms/shared_prefs/salter_pref.xml
+data/data/com.google.android.gms/shared_prefs/PseudonymousIdIntentService.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.wallet.buyflow.InitializationTemplateCache.xml
+data/data/com.google.android.gms/shared_prefs/nearbysharing:service:state.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.checkin.internal.network_backoff_shared_pref_name.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.checkin.internal.package_rate_limit_backoff_shared_pref_name.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.checkin.internal.high_frequency_backoff_shared_pref_name.xml
+data/data/com.google.android.gms/shared_prefs/instantapps.Routing.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.backup.BackupAccountNotifierService.xml
+data/data/com.google.android.gms/shared_prefs/nearbydirect_configuration.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gcm.xml
+data/data/com.google.android.gms/shared_prefs/AppsIndexerSharedPrefs.xml
+data/data/com.google.android.gms/shared_prefs/google_sdk_flags.xml
+data/data/com.google.android.gms/shared_prefs/DropboxRealtime.xml
+data/data/com.google.android.gms/shared_prefs/jams.prefs.default.xml
+data/data/com.google.android.gms/shared_prefs/auth_cron_chimera_service_storage.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.icing.mdh.service.MobileDataHubGcmTaskService_mdh-forcedsync.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.icing.mdh.service.MobileDataHubGcmTaskService_mdh-wipeout.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.icing.mdh.service.MobileDataHubGcmTaskService_mdh-subscription-cleanup.xml
+data/data/com.google.android.gms/shared_prefs/IndexWorkerChimeraService_preferences.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.update.storage.xml
+data/data/com.google.android.gms/shared_prefs/VisionDownload.xml
+data/data/com.google.android.gms/shared_prefs/pcvmspf.xml
+data/data/com.google.android.gms/shared_prefs/gms.people.xml
+data/data/com.google.android.gms/shared_prefs/copresence_gcm_pref.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.auth.devicesignals.DeviceSignalsStore.xml
+data/data/com.google.android.gms/shared_prefs/GmsBackupTransport.restoreScheduler.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.checkin.internal.checkin_scheduled_checkin_storage.xml
+data/data/com.google.android.gms/shared_prefs/MediastoreIndexerSharedPrefs.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_phenotype_config.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_gcm_task_periods.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_phenotype_registrar.xml
+data/data/com.google.android.gms/shared_prefs/METRICS_LOGGER_PREFERENCE_FILE.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.magictether.host.CLIENT_CONNECTION_MANAGER_PREFERENCE_FILE.xml
+data/data/com.google.android.gms/shared_prefs/contact_tracing_data_quality_record_db.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.magictether.client.CONFIG_HELPER_PREFERENCE_FILE.xml
+data/data/com.google.android.gms/shared_prefs/phonesky_recovery_shared_prefs.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms_preferences.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.wallet.service.ib.ParcelableCryptoKeys.xml
+data/data/com.google.android.gms/shared_prefs/LockboxOptInSettings.xml
+data/data/com.google.android.gms/shared_prefs/platformVersionName.xml
+data/data/com.google.android.gms/shared_prefs/ULR_HISTORIAN_STATE.xml
+data/data/com.google.android.gms/shared_prefs/EventLogAggregator.xml
+data/data/com.google.android.gms/shared_prefs/SchedulerPrefs.xml
+data/data/com.google.android.gms/shared_prefs/Telephonystats.xml
+data/data/com.google.android.gms/shared_prefs/Graphicsstats.xml
+data/data/com.google.android.gms/shared_prefs/Settingsstats.xml
+data/data/com.google.android.gms/shared_prefs/Netstats.xml
+data/data/com.google.android.gms/shared_prefs/Fingerprintstats.xml
+data/data/com.google.android.gms/shared_prefs/Mediastats.xml
+data/data/com.google.android.gms/shared_prefs/Ipconnectivitystats.xml
+data/data/com.google.android.gms/shared_prefs/Batterystats.xml
+data/data/com.google.android.gms/shared_prefs/Diskstats.xml
+data/data/com.google.android.gms/shared_prefs/Notificationstats.xml
+data/data/com.google.android.gms/shared_prefs/UnifiedDumpsysTask.xml
+data/data/com.google.android.gms/shared_prefs/Wifistats.xml
+data/data/com.google.android.gms/shared_prefs/Telecomstats.xml
+data/data/com.google.android.gms/shared_prefs/Dropbox.xml
+data/data/com.google.android.gms/shared_prefs/Launcherstats.xml
+data/data/com.google.android.gms/shared_prefs/Procstats.xml
+data/data/com.google.android.gms/shared_prefs/SurfaceFlinger.xml
+data/data/com.google.android.gms/shared_prefs/TestCodePref.xml
+data/data/com.google.android.gms/shared_prefs/ppl_first_sdk.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.westworld.xml
+data/data/com.google.android.gms/shared_prefs/platform_prefs.xml
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.playlog.uploader.xml
+data/data/com.google.android.gms/shared_prefs/CCTQosUploaderService.xml
+data/data/com.google.android.gms/shared_prefs/LogDropPref.xml
+data/data/com.google.android.gms/shared_prefs/timing_control_pref.xml
+data/data/com.google.android.gms/shared_prefs/discovery_shared_pref.xml
+data/data/com.google.android.gms/shared_prefs/CCTLogStoreUtil.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_shared_file_manager_metadata.xml
+data/data/com.google.android.gms/shared_prefs/gms_icing_mdd_shared_files.xml.bak
+data/data/com.google.android.gms/shared_prefs/com.google.android.gms.appdoctor_ph_flags.xml
+data/data/com.google.android.gms/databases/
+data/data/com.google.android.gms/databases/phenotype.db
+data/data/com.google.android.gms/databases/phenotype.db-wal
+data/data/com.google.android.gms/databases/phenotype.db-shm
+data/data/com.google.android.gms/databases/context_feature_default.db
+data/data/com.google.android.gms/databases/context_feature_default.db-journal
+data/data/com.google.android.gms/databases/gass.db
+data/data/com.google.android.gms/databases/gass.db-journal
+data/data/com.google.android.gms/databases/chromesync.data_store
+data/data/com.google.android.gms/databases/chromesync.data_store-journal
+data/data/com.google.android.gms/databases/constellation.db
+data/data/com.google.android.gms/databases/constellation.db-journal
+data/data/com.google.android.gms/databases/google_app_measurement.db
+data/data/com.google.android.gms/databases/google_app_measurement.db-journal
+data/data/com.google.android.gms/databases/cast.db
+data/data/com.google.android.gms/databases/cast.db-journal
+data/data/com.google.android.gms/databases/gaia-discovery
+data/data/com.google.android.gms/databases/gaia-discovery-wal
+data/data/com.google.android.gms/databases/gaia-discovery-shm
+data/data/com.google.android.gms/databases/ns.db
+data/data/com.google.android.gms/databases/mobstore_gc_db_v0
+data/data/com.google.android.gms/databases/mobstore_gc_db_v0-journal
+data/data/com.google.android.gms/databases/ns.db-journal
+data/data/com.google.android.gms/databases/dg.db
+data/data/com.google.android.gms/databases/dg.db-journal
+data/data/com.google.android.gms/databases/icing_contacts.db
+data/data/com.google.android.gms/databases/icing_contacts.db-journal
+data/data/com.google.android.gms/databases/downloads.db
+data/data/com.google.android.gms/databases/downloads.db-journal
+data/data/com.google.android.gms/databases/dgp.db
+data/data/com.google.android.gms/databases/dgp.db-journal
+data/data/com.google.android.gms/databases/rmq.db
+data/data/com.google.android.gms/databases/rmq.db-journal
+data/data/com.google.android.gms/databases/device_connections.db
+data/data/com.google.android.gms/databases/device_connections.db-journal
+data/data/com.google.android.gms/databases/android_pay
+data/data/com.google.android.gms/databases/android_pay-journal
+data/data/com.google.android.gms/databases/metadata.db
+data/data/com.google.android.gms/databases/metadata.db-journal
+data/data/com.google.android.gms/databases/icing-indexapi.db
+data/data/com.google.android.gms/databases/icing-indexapi.db-journal
+data/data/com.google.android.gms/databases/lighter_registration.db
+data/data/com.google.android.gms/databases/lighter_registration.db-journal
+data/data/com.google.android.gms/databases/gms.notifications.db
+data/data/com.google.android.gms/databases/gms.notifications.db-journal
+data/data/com.google.android.gms/databases/pay
+data/data/com.google.android.gms/databases/pay-journal
+data/data/com.google.android.gms/databases/reminders.db
+data/data/com.google.android.gms/databases/reminders.db-journal
+data/data/com.google.android.gms/no_backup/
+data/data/com.google.android.gms/no_backup/com.google.android.gms.appid-no-backup
+data/data/com.google.android.gms/no_backup/com.google.InstanceId.properties
+data/data/com.google.android.gms/app_dg_cache/
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/opt/
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/t
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/the.apk
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/oat/
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/oat/the.apk.cur.prof
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/oat/x86_64/
+data/data/com.google.android.gms/app_dg_cache/98E897165F6C27A34ABFA41BBD7299D887DB7E92/oat/x86_64/the.vdex
+data/data/com.google.android.gms/app_sslcache/
+data/data/com.google.android.gms/app_usage_reporting_db/
+data/data/com.google.android.gms/app_instantapps/
+data/data/com.google.android.gms/app_instantapps/metadataDatabase/
+data/data/com.google.android.gms/app_instantapps/metadataDatabase/LOG
+data/data/com.google.android.gms/app_instantapps/metadataDatabase/LOCK
+data/data/com.google.android.gms/app_instantapps/metadataDatabase/000003.log
+data/data/com.google.android.gms/app_instantapps/metadataDatabase/CURRENT
+data/data/com.google.android.gms/app_instantapps/metadataDatabase/MANIFEST-000002
+data/data/com.google.android.gms/app_instantapps/domainFilterInfoDb/
+data/data/com.google.android.gms/app_instantapps/domainFilterInfoDb/LOG
+data/data/com.google.android.gms/app_instantapps/domainFilterInfoDb/LOCK
+data/data/com.google.android.gms/app_instantapps/domainFilterInfoDb/000003.log
+data/data/com.google.android.gms/app_instantapps/domainFilterInfoDb/CURRENT
+data/data/com.google.android.gms/app_instantapps/domainFilterInfoDb/MANIFEST-000002
+data/data/com.google.android.gms/app_instantapps/instantAppDataDb/
+data/data/com.google.android.gms/app_instantapps/instantAppDataDb/LOG
+data/data/com.google.android.gms/app_instantapps/instantAppDataDb/LOCK
+data/data/com.google.android.gms/app_instantapps/instantAppDataDb/000003.log
+data/data/com.google.android.gms/app_instantapps/instantAppDataDb/CURRENT
+data/data/com.google.android.gms/app_instantapps/instantAppDataDb/MANIFEST-000002
+data/data/com.google.android.gms/app_instantapps/prefixFilterInfoDb/
+data/data/com.google.android.gms/app_instantapps/prefixFilterInfoDb/LOG
+data/data/com.google.android.gms/app_instantapps/prefixFilterInfoDb/LOCK
+data/data/com.google.android.gms/app_instantapps/prefixFilterInfoDb/000003.log
+data/data/com.google.android.gms/app_instantapps/prefixFilterInfoDb/CURRENT
+data/data/com.google.android.gms/app_instantapps/prefixFilterInfoDb/MANIFEST-000002
+data/data/com.google.android.gms/app_ulr_db_grpc/
+data/data/com.google.android.gms/app_ulr_db_grpc/LOG
+data/data/com.google.android.gms/app_ulr_db_grpc/LOCK
+data/data/com.google.android.gms/app_ulr_db_grpc/LOG.old
+data/data/com.google.android.gms/app_ulr_db_grpc/CURRENT
+data/data/com.google.android.gms/app_ulr_db_grpc/000018.log
+data/data/com.google.android.gms/app_ulr_db_grpc/MANIFEST-000016
+data/data/com.google.android.gms/app_contact-tracing-self-tracing-key-db/
+data/data/com.google.android.gms/app_contact-tracing-self-tracing-key-db/LOG
+data/data/com.google.android.gms/app_contact-tracing-self-tracing-key-db/LOCK
+data/data/com.google.android.gms/app_contact-tracing-self-tracing-key-db/LOG.old
+data/data/com.google.android.gms/app_contact-tracing-self-tracing-key-db/000099.log
+data/data/com.google.android.gms/app_contact-tracing-self-tracing-key-db/CURRENT
+data/data/com.google.android.gms/app_contact-tracing-self-tracing-key-db/MANIFEST-000098
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/version
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/LOG
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/LOCK
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/LOG.old
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/000007.log
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/CURRENT
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l1/MANIFEST-000006
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/version
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/LOG
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/LOCK
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/LOG.old
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/000007.log
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/CURRENT
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/l2/MANIFEST-000006
+data/data/com.google.android.gms/app_semanticlocation_placeindex_cache/ttl3
+data/data/com.google.android.gms/app_vision/
+data/data/com.google.android.gms/app_vision/ocr_start
+data/data/com.google.android.gms/app_pccache/
+data/data/com.google.android.gms/app_pccache/6/
+data/data/com.google.android.gms/app_pccache/6/1FECF17D179A896CE8C02AACE0C580FE8C2F25DD/
+data/data/com.google.android.gms/app_pccache/6/1FECF17D179A896CE8C02AACE0C580FE8C2F25DD/pcam.jar
+data/data/com.google.android.gms/app_pccache/6/1FECF17D179A896CE8C02AACE0C580FE8C2F25DD/pcbc
+data/data/com.google.android.gms/app_tmppccache/
+data/data/com.google.android.gms/app_en-matching-request-db/
+data/data/com.google.android.gms/app_en-matching-request-db/LOG
+data/data/com.google.android.gms/app_en-matching-request-db/LOCK
+data/data/com.google.android.gms/app_en-matching-request-db/LOG.old
+data/data/com.google.android.gms/app_en-matching-request-db/CURRENT
+data/data/com.google.android.gms/app_en-matching-request-db/000005.log
+data/data/com.google.android.gms/app_en-matching-request-db/MANIFEST-000004
+/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 164.6 MB/s (38482432 bytes in 0.223s)
+incoming_capsule_push_rc=0
+-- account assembly source facts (r11, guest ls as root - kept from r10):
+drwx--x--x 21 u0_a128 u0_a128 4096 2026-11-14 14:08 /data/data/com.google.android.gms
+drwx------  7 u0_a128 u0_a128 4096 2026-11-14 13:33 /data/data/com.google.android.gsf
+1	/data/data/com.google.android.gsf
+44	/data/data/com.google.android.gms
+ACCOUNT ASSEMBLY SOURCE FACT: gsf=present gms=present (guest /data/data dirs as root; absent is a legitimate state for a never-enrolled guest - the r11 table below treats documented absence and staging loss differently)
+pv_base_extract_rc=0
+-rw-rw-rw- 1 root   root      28 2026-11-14 07:40 /data/local/tmp/pv-capstage/data/local/tmp/phonevault-marker.txt
+-rw------- 1 system system 11478 2026-11-14 07:40 /data/local/tmp/pv-capstage/data/system/users/0/settings_secure.xml
+pv-acct/accounts_de.db: 1 file pushed, 0 skipped. 126.7 MB/s (65536 bytes in 0.000s)
+pv-acct/accounts_ce.db: 1 file pushed, 0 skipped. 164.5 MB/s (40960 bytes in 0.000s)
+-rw-rw---- 1 system system u:object_r:shell_data_file:s0  40960 2026-11-14 14:11 /data/local/tmp/pv-capstage/data/system_ce/0/accounts_ce.db
+-rw-rw---- 1 system system u:object_r:shell_data_file:s0  65536 2026-11-14 14:11 /data/local/tmp/pv-capstage/data/system_de/0/accounts_de.db
+-- account assembly dirs tar (r11, unchanged from r10): guest root tar of the present source dirs, extracted into the staging tree ON TOP OF the capsule base (the tar records uid/gid/mode; the root extract restores them; an explicitly named source dir yields at least its directory entry, so a present-but-empty dir still lands in the staging tree and in the capsule tar) --
+pv_dirs_tar_rc=0
+-rw-rw-rw- 1 root root 43600896 2026-11-14 14:11 /data/local/tmp/pv-dirs.tar
+pv_dirs_extract_rc=0
+-- account assembly staged result (r11):
+com.google.android.gms
+com.google.android.gsf
+1	/data/local/tmp/pv-capstage/data/data/com.google.android.gsf
+44	/data/local/tmp/pv-capstage/data/data/com.google.android.gms
+pv-acct/accounts.xml: 1 file pushed, 0 skipped. 5.2 MB/s (783 bytes in 0.000s)
+extended_capsule_tar_rc=0
+/data/local/tmp/pv-capsule.tar: 1 file pulled, 0 skipped. 62.3 MB/s (43774464 bytes in 0.670s)
+PVACCT verify name=pvmechtest@example.invalid type=com.google ce_id=1 de_id=1
+PVACCT verify name=pvlocal@example.invalid type=com.phonevault.test ce_id=2 de_id=2
+PVACCT_RESULT: VERIFY_OK
+-- capsule manifest (r11): written BEFORE the full-table check so the table can carry the manifest row; its identity values are the incoming capsule's own (CID/CTOKEN/CMPATH/CMD5 were read by wake part 1 from the pinned pack's certificate, whose capsule_sha256 gate-verified the merge base above) --
+ACCOUNT PHASE: outgoing manifest written (capsule_sha256=5eaa8926fde6fe8247cf5dc14ac3623e9f6c1a17ab553232f1d4d7ac0abfbd2a)
+-- account capsule listings used by the r11 table: the INCOMING listing (merge base) was printed at assembly; the MERGED listing follows (head -30):
+data/
+data/system/
+data/system/users/
+data/system/users/0/
+data/system/users/0/settings_secure.xml
+data/system/sync/
+data/system/sync/accounts.xml
+data/local/
+data/local/tmp/
+data/local/tmp/phonevault-marker.txt
+data/system_de/
+data/system_de/0/
+data/system_de/0/accounts_de.db
+data/system_ce/
+data/system_ce/0/
+data/system_ce/0/accounts_ce.db
+data/data/
+data/data/com.google.android.gsf/
+data/data/com.google.android.gsf/cache/
+data/data/com.google.android.gsf/cache/oat_primary/
+data/data/com.google.android.gsf/cache/oat_primary/x86_64/
+data/data/com.google.android.gsf/cache/oat_primary/x86_64/GoogleServicesFramework.art
+data/data/com.google.android.gsf/code_cache/
+data/data/com.google.android.gsf/databases/
+data/data/com.google.android.gsf/databases/gservices.db
+data/data/com.google.android.gsf/databases/gservices.db-journal
+data/data/com.google.android.gsf/databases/googlesettings.db
+data/data/com.google.android.gsf/databases/googlesettings.db-journal
+data/data/com.google.android.gsf/files/
+data/data/com.google.android.gsf/files/profileInstalled
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 578: printf: write error: Broken pipe
+merged capsule listing: 1183 entries in total
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 586: printf: write error: Broken pipe
+ACCOUNT CAPSULE TABLE: settings_secure.xml | data/system/users/0/settings_secure.xml | MISSING (in incoming listing: 1, in merged listing: 0) | origin: incoming-capsule
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 585: printf: write error: Broken pipe
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 586: printf: write error: Broken pipe
+ACCOUNT CAPSULE TABLE: phonevault-marker.txt | data/local/tmp/phonevault-marker.txt | MISSING (in incoming listing: 0, in merged listing: 0) | origin: incoming-capsule
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 591: printf: write error: Broken pipe
+ACCOUNT CAPSULE TABLE: accounts_de.db | data/system_de/0/accounts_de.db | MISSING | origin: phase-staged
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 591: printf: write error: Broken pipe
+ACCOUNT CAPSULE TABLE: accounts_ce.db | data/system_ce/0/accounts_ce.db | MISSING | origin: phase-staged
+ACCOUNT CAPSULE TABLE: capsule-manifest.txt | pv-capsule-r11/capsule-manifest.txt (outgoing, beside the capsule tar) | PRESENT | origin: phase-staged (identity values carried from the incoming capsule)
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 595: printf: write error: Broken pipe
+ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (present at capture) | origin: phase-staged
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 600: printf: write error: Broken pipe
+ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | MISSING (source dir present on the guest - staging loss) | origin: phase-staged
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 601: printf: write error: Broken pipe
+ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | MISSING (GSF source dir present on the guest - staging loss) | origin: phase-staged
+ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | PRESENT | origin: phase-staged
+ACCOUNT CAPSULE TABLE VERDICT: INCOMPLETE - missing required item(s): settings_secure.xml phonevault-marker.txt accounts_de.db accounts_ce.db sync/accounts.xml gsf-entries gservices.db
+ACCOUNT PHASE: FAILED - extended capsule merge incomplete - missing required item(s): settings_secure.xml phonevault-marker.txt accounts_de.db accounts_ce.db sync/accounts.xml gsf-entries gservices.db (the full table above lists every item at once; previous capsule kept, capsule_accounts=absent); the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent (the next wake grades ACCOUNT_PERSIST: UNGRADED, never a false NO)
+framework was never stopped in this run (capture primitive: adb-root-pull; the r8 snapshot/stop ladder was removed in r9; the r9 cp -a dir staging was replaced by the guest-root-tar method in r10; the r11 merge construction bases the assembly on the incoming capsule and retires the last cp -a pair) - no restart to perform or prove
+    Account {name=pvmechtest@example.invalid, type=com.google}
+    Account {name=pvlocal@example.invalid, type=com.phonevault.test}
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.958, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.926, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.926, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.905, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.894, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.891, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.89, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.851, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.85, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.85, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.825, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.825, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.813, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.812, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.807, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.797, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.789, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+    Session: expectLaunch false, connected true, stats (0/0/0), lifetime 28.774, hasFeatures, Account {name=pvmechtest@example.invalid, type=com.google}, service_gmscore_out_of_sync_fake_service
+grep: write error: Broken pipe
+/home/runner/work/_temp/d66192f5-7e8d-42ab-8195-52c49ccf2815.sh: line 629: printf: write error: Broken pipe
+ACCOUNT PHASE CONTROL (r11 semantics, restated): the probes are NOT expected in the listing above - the plant is host-side, the guest's canonical account DBs were never written, and this run's AMS can only serve what it booted with. The in-run control for the plant is the host verification of the SEALED capsule above; the cross-wake control - what the NEXT wake's AMS does with the planted DBs after capsule apply + reboot 2 - is exactly that wake's ACCOUNT_PERSIST grade. An in-run probe listing is therefore neither expected nor required in r11 (this replaces the r7 control, which conflated insertion-acceptance with transport)
+OK: killing emulator, bye bye
+OK
+emu_kill_rc=0
+shutdown poll 1: still alive: qemu-system present
+graceful stop confirmed at poll 2
+host sync done
+pack certificate capsule_sha256 updated to the r7 re-captured capsule: 5eaa8926fde6fe8247cf5dc14ac3623e9f6c1a17ab553232f1d4d7ac0abfbd2a
+/dev/root        72G   58G   15G  81% /
+-- AVD folder listing BEFORE pack --
+total 1.4G
+-rw------- 1 runner runner    0 Nov 14 14:10 bootcompleted.ini
+-rw-r--r-- 1 runner runner  66M Nov 14 14:06 cache.img
+-rw-r--r-- 1 runner runner 193K Nov 14 14:06 cache.img.qcow2
+-rw-r--r-- 1 runner runner  627 Nov 14 13:36 capsule-manifest.txt
+-rw-r--r-- 1 runner runner 3.7K Nov 14 07:39 config.ini
+drwxr-xr-x 3 runner runner 4.0K Nov 14 14:06 data
+-rw-r--r-- 1 runner runner  282 Nov 14 14:06 emu-launch-params.txt
+-rw-r--r-- 1 runner runner  113 Nov 14 14:11 emulator-user.ini
+-rw------- 1 runner runner  18M Nov 14 07:39 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.7M Nov 14 14:10 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.2K Nov 14 14:06 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.8M Nov 14 14:06 initrd
+drwxr-xr-x 3 runner runner 4.0K Nov 14 14:07 modem_simulator
+-rw-r--r-- 1 runner runner    0 Nov 14 14:06 multiinstance.lock
+-rw-r--r-- 1 runner runner   38 Nov 14 14:06 netsim.ini
+-rw-r--r-- 1 runner runner 1.5K Nov 14 13:36 phonevault-version.txt
+-rw-r--r-- 1 runner runner  37M Nov 14 13:36 pv-capsule.tar
+-rw-r--r-- 1 runner runner    1 Nov 14 14:06 qemu-version.txt
+-rw-r--r-- 1 runner runner    0 Nov 14 14:06 read-snapshot.txt
+drwxr-xr-x 2 runner runner 4.0K Nov 14 14:11 tmpAdbCmds
+-rw------- 1 runner runner 6.2M Nov 14 07:39 userdata-qemu.img
+-rw-r--r-- 1 runner runner 1.3G Nov 14 14:11 userdata-qemu.img.qcow2
+-rw-r--r-- 1 runner runner    9 Nov 14 14:06 version_num.cache
+-- phonevault-version.txt (in pack) --
+avd_name=factoryphone
+system_image=system-images;android-34;google_apis;x86_64
+emulator_version=Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)
+emulator_pkg_revision=37.2.13
+system_image_revision=14
+production=1
+session=9
+born_utc=2026-11-14T07:39:38Z
+packed_utc=2026-11-14T14:11:32Z
+android_id=6baedd5ca4a87e43
+marker_token=pv1-20261114074056-61f7b8f0
+marker_ok=1
+marker_guest_path=/data/local/tmp/phonevault-marker.txt
+phone=verify
+route=wake-v4.0
+identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)
+capsule_sha256=5eaa8926fde6fe8247cf5dc14ac3623e9f6c1a17ab553232f1d4d7ac0abfbd2a
+settings_secure_md5_birth=ec20567de6d222dcb7605052b34c712f
+datapersist_sentinel=planted
+userdata_posture=fstab-unencrypted-v60test
+v60test_state=planted
+capsule_accounts=absent
+largest_userdata_file=userdata-qemu.img.qcow2
+largest_userdata_size_bytes=1383333888
+largest_userdata_sha256=f98f61b62fd8f1a5cc6281c9e06a881b23693208d60e634c5b47b68d6f9be886
+packed_file: userdata-qemu.img.qcow2 1383333888 bytes
+packed_file: userdata-qemu.img 6488064 bytes
+packed_file: encryptionkey.img.qcow2 1769472 bytes
+packed_file: encryptionkey.img 18874368 bytes
+packed_file: config.ini 3783 bytes
+packed_file: emulator-user.ini 113 bytes
+packed_file: hardware-qemu.ini 4211 bytes
+packed_file: pv-capsule.tar 38482432 bytes
+packed_file: capsule-manifest.txt 627 bytes
+packed_file: phonevault-version.txt (this file)
 pack set: userdata-qemu.img.qcow2 userdata-qemu.img encryptionkey.img.qcow2 encryptionkey.img config.ini emulator-user.ini hardware-qemu.ini pv-capsule.tar capsule-manifest.txt phonevault-version.txt
 excluded by construction (never in the candidate list): cache.img, cache.img.qcow2, snapshots/, *.lock
 tar_rc=0
--rw-r--r-- 1 runner runner 1.3G Nov 14 13:36 phonevault-state.tar
-seal check: sha256(userdata-qemu.img.qcow2) recomputed FROM the finished tar=37794f06db34062f4732c4ae9d871e4130d67e6c46bfb298a3c78a59643c391d vs certificate=37794f06db34062f4732c4ae9d871e4130d67e6c46bfb298a3c78a59643c391d
+-rw-r--r-- 1 runner runner 1.4G Nov 14 14:11 phonevault-state.tar
+seal check: sha256(userdata-qemu.img.qcow2) recomputed FROM the finished tar=f98f61b62fd8f1a5cc6281c9e06a881b23693208d60e634c5b47b68d6f9be886 vs certificate=f98f61b62fd8f1a5cc6281c9e06a881b23693208d60e634c5b47b68d6f9be886
 PACK_OK=1 - production pack phonevault-state.tar complete (tar_rc=0, seal verified from the tar)
-pack_sha256=ae2c4dabe8616688666fb66b92b03106886b13cfb60b0b878402eefe7101c9e9
-WAKE: SAME PHONE - capsule android_id 6baedd5ca4a87e43 re-applied by root after the disk restore (the wake boot had woken as d9898ec7d9f0caa9) and SURVIVED the extra reboot; marker restored from /data/local/tmp/phonevault-marker.txt and survived; state RE-PACKED as session 8 with the same capsule and uploaded as the new phonevaultverify-v60test-avd-state (pack_sha256=ae2c4dabe8616688666fb66b92b03106886b13cfb60b0b878402eefe7101c9e9) - the NEXT wake pins THIS run
+pack_sha256=e79abd95f7deb970ea0d5519fd77331bc1f24ba0165b36e86fca757f56ae0169
+WAKE: SAME PHONE - capsule android_id 6baedd5ca4a87e43 re-applied by root after the disk restore (the wake boot had woken as 3f7f5f3e712d9d61) and SURVIVED the extra reboot; marker restored from /data/local/tmp/phonevault-marker.txt and survived; state RE-PACKED as session 9 with the same capsule and uploaded as the new phonevaultverify-v60test-avd-state (pack_sha256=e79abd95f7deb970ea0d5519fd77331bc1f24ba0165b36e86fca757f56ae0169) - the NEXT wake pins THIS run
 
 ########## .pv-evidence-final/07d-vault.txt ##########
 ===== 7d vault store (v5.4): pack -> the phone's own HF vault dataset, directly from this runner =====
@@ -596,149 +1321,174 @@ vault_repo=jasveerai92/phonevault-verify-v60test phone=verify
 Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
 New Data Upload               : |          |  0.00B /  0.00B            [A
 
-  ...robe/phonevault-state.tar:   0%|          | 4.44MB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:   0%|          | 3.00MB / 1.45GB            [A[A
 
-  ...robe/phonevault-state.tar:   0%|          | 4.44MB / 1.33GB            [A[AProcessing Files (0 / 1)      :   0%|          | 4.44MB / 1.33GB,  439kB/s  
-New Data Upload               :   6%|▋         | 4.34MB / 67.0MB,  429kB/s  [A
+  ...robe/phonevault-state.tar:   0%|          | 3.00MB / 1.45GB            [A[AProcessing Files (0 / 1)      :   0%|          | 3.00MB / 1.45GB,  296kB/s  
+New Data Upload               :   4%|▍         | 3.00MB / 67.0MB,  296kB/s  [A
 
-  ...robe/phonevault-state.tar:   2%|▏         | 26.8MB / 1.33GB            [A[AProcessing Files (0 / 1)      :   2%|▏         | 26.8MB / 1.33GB, 2.64MB/s  
-New Data Upload               :  23%|██▎       | 15.2MB / 67.0MB, 1.49MB/s  [A
+  ...robe/phonevault-state.tar:   3%|▎         | 48.6MB / 1.45GB            [A[AProcessing Files (0 / 1)      :   3%|▎         | 48.6MB / 1.45GB, 4.78MB/s  
+New Data Upload               :  18%|█▊        | 12.0MB / 67.0MB, 1.18MB/s  [A
 
-  ...robe/phonevault-state.tar:   4%|▍         | 58.8MB / 1.33GB            [A[AProcessing Files (0 / 1)      :   4%|▍         | 58.8MB / 1.33GB, 5.75MB/s  
-New Data Upload               :  47%|████▋     | 31.5MB / 67.0MB, 3.08MB/s  [A
+  ...robe/phonevault-state.tar:   8%|▊         |  112MB / 1.45GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  112MB / 1.45GB, 11.0MB/s  
+New Data Upload               :  30%|██▉       | 20.0MB / 67.0MB, 1.95MB/s  [A
 
-  ...robe/phonevault-state.tar:   8%|▊         |  110MB / 1.33GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  110MB / 1.33GB, 10.7MB/s  
-New Data Upload               :  65%|██████▍   | 43.4MB / 67.0MB, 4.22MB/s  [A
+  ...robe/phonevault-state.tar:  11%|█         |  154MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  11%|█         |  154MB / 1.45GB, 15.0MB/s  
+New Data Upload               :  48%|████▊     | 32.0MB / 67.0MB, 3.11MB/s  [A
 
-  ...robe/phonevault-state.tar:  11%|█▏        |  153MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  11%|█▏        |  153MB / 1.33GB, 14.8MB/s  
-New Data Upload               :  83%|████████▎ | 55.4MB / 67.0MB, 5.34MB/s  [A
+  ...robe/phonevault-state.tar:  12%|█▏        |  179MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  12%|█▏        |  179MB / 1.45GB, 17.3MB/s  
+New Data Upload               :  61%|██████    | 41.0MB / 67.0MB, 3.95MB/s  [A
 
-  ...robe/phonevault-state.tar:  13%|█▎        |  176MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  13%|█▎        |  176MB / 1.33GB, 16.9MB/s  
-New Data Upload               :  97%|█████████▋| 65.1MB / 67.0MB, 6.24MB/s  [A
+  ...robe/phonevault-state.tar:  13%|█▎        |  191MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  13%|█▎        |  191MB / 1.45GB, 18.2MB/s  
+New Data Upload               :  39%|███▉      | 52.0MB /  134MB, 4.98MB/s  [A
 
-  ...robe/phonevault-state.tar:  13%|█▎        |  178MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  13%|█▎        |  178MB / 1.33GB, 16.9MB/s  
-New Data Upload               :  50%|████▉     | 67.0MB /  134MB, 6.36MB/s  [A
+  ...robe/phonevault-state.tar:  14%|█▍        |  201MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  14%|█▍        |  201MB / 1.45GB, 19.1MB/s  
+New Data Upload               :  46%|████▌     | 61.9MB /  134MB, 5.90MB/s  [A
 
-  ...robe/phonevault-state.tar:  13%|█▎        |  178MB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  16%|█▌        |  227MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  16%|█▌        |  227MB / 1.45GB, 21.4MB/s  
+New Data Upload               :  50%|████▉     | 67.0MB /  134MB, 6.34MB/s  [A
 
-  ...robe/phonevault-state.tar:  17%|█▋        |  219MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  17%|█▋        |  219MB / 1.33GB, 20.6MB/s  
-New Data Upload               :  63%|██████▎   | 84.2MB /  134MB, 7.88MB/s  [A
+  ...robe/phonevault-state.tar:  20%|██        |  293MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  20%|██        |  293MB / 1.45GB, 27.5MB/s  
+New Data Upload               :  62%|██████▏   | 83.1MB /  134MB, 7.83MB/s  [A
 
-  ...robe/phonevault-state.tar:  21%|██        |  275MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  275MB / 1.33GB, 25.7MB/s  
-New Data Upload               :  73%|███████▎  | 97.9MB /  134MB, 9.12MB/s  [A
+  ...robe/phonevault-state.tar:  28%|██▊       |  406MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  406MB / 1.45GB, 38.0MB/s  
+New Data Upload               :  88%|████████▊ |  118MB /  134MB, 11.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  26%|██▌       |  346MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  346MB / 1.33GB, 32.2MB/s  
-New Data Upload               :  82%|████████▏ |  110MB /  134MB, 10.2MB/s  [A
+  ...robe/phonevault-state.tar:  32%|███▏      |  466MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  32%|███▏      |  466MB / 1.45GB, 43.4MB/s  
+New Data Upload               : 100%|█████████▉|  134MB /  134MB, 12.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  31%|███       |  409MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  31%|███       |  409MB / 1.33GB, 37.9MB/s  
-New Data Upload               :  92%|█████████▏|  123MB /  134MB, 11.3MB/s  [A
+  ...robe/phonevault-state.tar:  38%|███▊      |  546MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  546MB / 1.45GB, 50.6MB/s  
 
-  ...robe/phonevault-state.tar:  35%|███▍      |  463MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  35%|███▍      |  463MB / 1.33GB, 42.6MB/s  
-New Data Upload               : 100%|█████████▉|  134MB /  134MB, 12.3MB/s  [A
+  ...robe/phonevault-state.tar:  41%|████      |  592MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  41%|████      |  592MB / 1.45GB, 54.5MB/s  
 
-  ...robe/phonevault-state.tar:  40%|████      |  535MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  40%|████      |  535MB / 1.33GB, 49.1MB/s  
+  ...robe/phonevault-state.tar:  42%|████▏     |  602MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  602MB / 1.45GB, 54.9MB/s  
+New Data Upload               :  67%|██████▋   |  134MB /  201MB, 12.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  47%|████▋     |  626MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  47%|████▋     |  626MB / 1.33GB, 57.2MB/s  
-New Data Upload               : 100%|█████████▉|  201MB /  201MB, 18.4MB/s  [A
+  ...robe/phonevault-state.tar:  42%|████▏     |  602MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  602MB / 1.45GB, 54.4MB/s  
 
-  ...robe/phonevault-state.tar:  48%|████▊     |  643MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  643MB / 1.33GB, 58.3MB/s  
+  ...robe/phonevault-state.tar:  48%|████▊     |  689MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  689MB / 1.45GB, 61.8MB/s  
+New Data Upload               :  66%|██████▌   |  221MB /  335MB, 20.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  48%|████▊     |  643MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  643MB / 1.33GB, 57.7MB/s  
+  ...robe/phonevault-state.tar:  50%|█████     |  731MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  50%|█████     |  731MB / 1.45GB, 65.1MB/s  
+New Data Upload               :  78%|███████▊  |  262MB /  335MB, 23.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  52%|█████▏    |  695MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    |  695MB / 1.33GB, 62.1MB/s  
-New Data Upload               :  94%|█████████▍|  253MB /  268MB, 22.8MB/s  [A
+  ...robe/phonevault-state.tar:  51%|█████     |  737MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  51%|█████     |  737MB / 1.45GB, 65.0MB/s  
+New Data Upload               :  80%|███████▉  |  268MB /  335MB, 24.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  53%|█████▎    |  710MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  53%|█████▎    |  710MB / 1.33GB, 62.9MB/s  
-New Data Upload               :  80%|███████▉  |  268MB /  335MB, 24.0MB/s  [A
+  ...robe/phonevault-state.tar:  52%|█████▏    |  747MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    |  747MB / 1.45GB, 65.4MB/s  
+New Data Upload               :  69%|██████▉   |  278MB /  402MB, 24.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  56%|█████▌    |  740MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  740MB / 1.33GB, 65.2MB/s  
-New Data Upload               :  81%|████████  |  271MB /  335MB, 24.0MB/s  [A
+  ...robe/phonevault-state.tar:  53%|█████▎    |  762MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  53%|█████▎    |  762MB / 1.45GB, 66.2MB/s  
+New Data Upload               :  73%|███████▎  |  294MB /  402MB, 26.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  59%|█████▉    |  785MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  59%|█████▉    |  785MB / 1.33GB, 68.7MB/s  
-New Data Upload               :  87%|████████▋ |  291MB /  335MB, 25.6MB/s  [A
+  ...robe/phonevault-state.tar:  54%|█████▍    |  781MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  54%|█████▍    |  781MB / 1.45GB, 67.3MB/s  
+New Data Upload               :  78%|███████▊  |  313MB /  402MB, 27.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  61%|██████▏   |  814MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  61%|██████▏   |  814MB / 1.33GB, 70.8MB/s  
-New Data Upload               :  78%|███████▊  |  313MB /  402MB, 27.4MB/s  [A
+  ...robe/phonevault-state.tar:  55%|█████▌    |  800MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  55%|█████▌    |  800MB / 1.45GB, 68.3MB/s  
+New Data Upload               :  71%|███████   |  331MB /  469MB, 28.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  64%|██████▍   |  856MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  64%|██████▍   |  856MB / 1.33GB, 73.8MB/s  
-New Data Upload               :  87%|████████▋ |  348MB /  402MB, 30.4MB/s  [A
+  ...robe/phonevault-state.tar:  56%|█████▋    |  816MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  56%|█████▋    |  816MB / 1.45GB, 69.2MB/s  
+New Data Upload               :  74%|███████▎  |  346MB /  469MB, 30.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  66%|██████▌   |  879MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  66%|██████▌   |  879MB / 1.33GB, 75.3MB/s  
-New Data Upload               :  90%|█████████ |  363MB /  402MB, 31.5MB/s  [A
+  ...robe/phonevault-state.tar:  57%|█████▋    |  831MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  831MB / 1.45GB, 69.8MB/s  
+New Data Upload               :  76%|███████▋  |  359MB /  469MB, 30.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  68%|██████▊   |  905MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   |  905MB / 1.33GB, 77.0MB/s  
-New Data Upload               :  82%|████████▏ |  385MB /  469MB, 33.2MB/s  [A
+  ...robe/phonevault-state.tar:  58%|█████▊    |  842MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  842MB / 1.45GB, 70.2MB/s  
+New Data Upload               :  79%|███████▊  |  369MB /  469MB, 31.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  70%|███████   |  933MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  70%|███████   |  933MB / 1.33GB, 78.8MB/s  
-New Data Upload               :  86%|████████▌ |  402MB /  469MB, 34.5MB/s  [A
+  ...robe/phonevault-state.tar:  59%|█████▉    |  856MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  59%|█████▉    |  856MB / 1.45GB, 70.9MB/s  
+New Data Upload               :  82%|████████▏ |  383MB /  469MB, 32.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  71%|███████   |  941MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  71%|███████   |  941MB / 1.33GB, 78.8MB/s  
-New Data Upload               :  87%|████████▋ |  410MB /  469MB, 34.9MB/s  [A
+  ...robe/phonevault-state.tar:  60%|█████▉    |  866MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  60%|█████▉    |  866MB / 1.45GB, 71.1MB/s  
+New Data Upload               :  84%|████████▎ |  393MB /  469MB, 33.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  75%|███████▌  |  997MB / 1.33GB            [A[AProcessing Files (0 / 1)      :  75%|███████▌  |  997MB / 1.33GB, 83.2MB/s  
-New Data Upload               :  89%|████████▉ |  417MB /  469MB, 35.2MB/s  [A
+  ...robe/phonevault-state.tar:  62%|██████▏   |  897MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  62%|██████▏   |  897MB / 1.45GB, 73.3MB/s  
+New Data Upload               :  87%|████████▋ |  408MB /  469MB, 34.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  76%|███████▌  | 1.01GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  76%|███████▌  | 1.01GB / 1.33GB, 83.4MB/s  
-New Data Upload               :  90%|█████████ |  424MB /  469MB, 35.5MB/s  [A
+  ...robe/phonevault-state.tar:  65%|██████▍   |  937MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  65%|██████▍   |  937MB / 1.45GB, 76.3MB/s  
+New Data Upload               :  89%|████████▉ |  417MB /  469MB, 34.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  78%|███████▊  | 1.03GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  | 1.03GB / 1.33GB, 84.9MB/s  
-New Data Upload               :  93%|█████████▎|  435MB /  469MB, 36.1MB/s  [A
+  ...robe/phonevault-state.tar:  65%|██████▌   |  946MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  65%|██████▌   |  946MB / 1.45GB, 76.3MB/s  
+New Data Upload               :  79%|███████▉  |  426MB /  537MB, 35.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  80%|████████  | 1.06GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  80%|████████  | 1.06GB / 1.33GB, 86.9MB/s  
-New Data Upload               :  94%|█████████▍|  443MB /  469MB, 36.6MB/s  [A
+  ...robe/phonevault-state.tar:  66%|██████▌   |  951MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  66%|██████▌   |  951MB / 1.45GB, 76.1MB/s  
+New Data Upload               :  80%|████████  |  430MB /  537MB, 35.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  81%|████████  | 1.08GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  81%|████████  | 1.08GB / 1.33GB, 87.2MB/s  
-New Data Upload               :  85%|████████▍ |  454MB /  536MB, 37.2MB/s  [A
+  ...robe/phonevault-state.tar:  67%|██████▋   |  964MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  67%|██████▋   |  964MB / 1.45GB, 76.6MB/s  
+New Data Upload               :  82%|████████▏ |  441MB /  537MB, 36.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  81%|████████▏ | 1.08GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ | 1.08GB / 1.33GB, 87.0MB/s  
-New Data Upload               :  86%|████████▌ |  461MB /  536MB, 37.5MB/s  [A
+  ...robe/phonevault-state.tar:  67%|██████▋   |  975MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  67%|██████▋   |  975MB / 1.45GB, 76.9MB/s  
+New Data Upload               :  84%|████████▍ |  452MB /  537MB, 36.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  84%|████████▍ | 1.12GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.12GB / 1.33GB, 89.2MB/s  
-New Data Upload               :  88%|████████▊ |  471MB /  536MB, 38.1MB/s  [A
+  ...robe/phonevault-state.tar:  68%|██████▊   |  992MB / 1.45GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   |  992MB / 1.45GB, 77.8MB/s  
+New Data Upload               :  85%|████████▌ |  457MB /  537MB, 36.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  87%|████████▋ | 1.15GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.15GB / 1.33GB, 91.8MB/s  
-New Data Upload               :  90%|████████▉ |  481MB /  536MB, 38.6MB/s  [A
+  ...robe/phonevault-state.tar:  71%|███████▏  | 1.03GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  71%|███████▏  | 1.03GB / 1.45GB, 80.8MB/s  
+New Data Upload               :  87%|████████▋ |  468MB /  537MB, 37.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  88%|████████▊ | 1.17GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.17GB / 1.33GB, 92.0MB/s  
-New Data Upload               :  92%|█████████▏|  492MB /  536MB, 39.2MB/s  [A
+  ...robe/phonevault-state.tar:  74%|███████▍  | 1.08GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  74%|███████▍  | 1.08GB / 1.45GB, 84.1MB/s  
+New Data Upload               :  89%|████████▉ |  479MB /  537MB, 38.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  90%|████████▉ | 1.19GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.19GB / 1.33GB, 93.7MB/s  
-New Data Upload               :  94%|█████████▍|  505MB /  536MB, 40.0MB/s  [A
+  ...robe/phonevault-state.tar:  77%|███████▋  | 1.11GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  | 1.11GB / 1.45GB, 86.4MB/s  
+New Data Upload               :  91%|█████████▏|  490MB /  537MB, 38.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  92%|█████████▏| 1.22GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.22GB / 1.33GB, 95.3MB/s  
-New Data Upload               :  85%|████████▍ |  513MB /  603MB, 40.4MB/s  [A
+  ...robe/phonevault-state.tar:  78%|███████▊  | 1.13GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  | 1.13GB / 1.45GB, 87.4MB/s  
+New Data Upload               :  82%|████████▏ |  497MB /  604MB, 39.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  93%|█████████▎| 1.23GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.23GB / 1.33GB, 95.5MB/s  
-New Data Upload               :  87%|████████▋ |  523MB /  603MB, 40.9MB/s  [A
+  ...robe/phonevault-state.tar:  79%|███████▉  | 1.15GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  79%|███████▉  | 1.15GB / 1.45GB, 87.7MB/s  
+New Data Upload               :  83%|████████▎ |  503MB /  604MB, 39.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  95%|█████████▍| 1.26GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.26GB / 1.33GB, 97.0MB/s  
-New Data Upload               :  90%|████████▉ |  546MB /  609MB, 42.6MB/s  [A
+  ...robe/phonevault-state.tar:  82%|████████▏ | 1.19GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ | 1.19GB / 1.45GB, 91.1MB/s  
+New Data Upload               :  87%|████████▋ |  523MB /  604MB, 40.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  96%|█████████▌| 1.28GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.28GB / 1.33GB, 97.8MB/s  
-New Data Upload               :  93%|█████████▎|  564MB /  609MB, 43.8MB/s  [A
+  ...robe/phonevault-state.tar:  84%|████████▍ | 1.22GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.22GB / 1.45GB, 93.0MB/s  
+New Data Upload               :  88%|████████▊ |  530MB /  604MB, 40.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  97%|█████████▋| 1.29GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.29GB / 1.33GB, 98.3MB/s  
-New Data Upload               :  95%|█████████▌|  579MB /  609MB, 44.8MB/s  [A
+  ...robe/phonevault-state.tar:  86%|████████▌ | 1.24GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.24GB / 1.45GB, 93.8MB/s  
+New Data Upload               :  89%|████████▉ |  537MB /  604MB, 41.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  99%|█████████▉| 1.31GB / 1.33GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.31GB / 1.33GB, 99.1MB/s  
-New Data Upload               :  98%|█████████▊|  598MB /  609MB, 46.1MB/s  [A
+  ...robe/phonevault-state.tar:  90%|████████▉ | 1.30GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.30GB / 1.45GB, 98.5MB/s  
+New Data Upload               :  84%|████████▎ |  550MB /  657MB, 41.9MB/s  [A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.32GB / 1.33GB, 99.1MB/s  
-New Data Upload               : 100%|█████████▉|  609MB /  609MB, 46.6MB/s  [A
+  ...robe/phonevault-state.tar:  92%|█████████▏| 1.33GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.33GB / 1.45GB, 99.6MB/s  
+New Data Upload               :  87%|████████▋ |  570MB /  657MB, 43.2MB/s  [A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  93%|█████████▎| 1.35GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.35GB / 1.45GB,  101MB/s  
+New Data Upload               :  90%|█████████ |  593MB /  657MB, 44.9MB/s  [A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  94%|█████████▍| 1.37GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.37GB / 1.45GB,  101MB/s  
+New Data Upload               :  92%|█████████▏|  607MB /  657MB, 45.7MB/s  [A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  96%|█████████▌| 1.38GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.38GB / 1.45GB,  102MB/s  
+New Data Upload               :  95%|█████████▍|  623MB /  657MB, 46.7MB/s  [A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.32GB / 1.33GB, 95.7MB/s  
-New Data Upload               : 100%|█████████▉|  609MB /  609MB, 45.0MB/s  [A
+  ...robe/phonevault-state.tar:  97%|█████████▋| 1.40GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.40GB / 1.45GB,  103MB/s  
+New Data Upload               :  97%|█████████▋|  639MB /  657MB, 47.7MB/s  [A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.42GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.42GB / 1.45GB,  103MB/s  
+New Data Upload               :  99%|█████████▉|  652MB /  657MB, 48.4MB/s  [A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.32GB / 1.33GB, 94.0MB/s  
-New Data Upload               : 100%|██████████|  609MB /  609MB, 44.2MB/s  [A
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.42GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.42GB / 1.45GB,  103MB/s  
+New Data Upload               : 100%|█████████▉|  654MB /  657MB, 48.2MB/s  [A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.43GB / 1.45GB,  102MB/s  
+New Data Upload               : 100%|█████████▉|  657MB /  657MB, 48.0MB/s  [A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.43GB / 1.45GB, 98.6MB/s  
+New Data Upload               : 100%|█████████▉|  657MB /  657MB, 46.4MB/s  [A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.43GB / 1.45GB, 97.7MB/s  
+New Data Upload               : 100%|█████████▉|  657MB /  657MB, 46.0MB/s  [A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.43GB / 1.45GB, 96.1MB/s  
+New Data Upload               : 100%|██████████|  657MB /  657MB, 45.2MB/s  [A
 
 
 Validating                    :           |   0%            [A[A[A
@@ -746,24 +1496,39 @@ vault_repo=jasveerai92/phonevault-verify-v60test phone=verify
 
 Validating                    :           |   0%            [A[A[A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
 
 
 Validating                    :           |   0%            [A[A[A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
 
 
 Validating                    :           |   0%            [A[A[A
 
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            [A[A
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
 
 
-Validating                    : ██████████| 100%            [A[A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.32GB / 1.33GB, 92.0MB/s  
-New Data Upload               : 100%|██████████|  609MB /  609MB, 43.3MB/s  
+Validating                    :           |   0%            [A[A[A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
+
+
+Validating                    :           |   0%            [A[A[A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
+
+
+Validating                    : ██████████| 100%            [A[A[A
+
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            [A[A
+
+
+Validating                    : ██████████| 100%            [A[A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.43GB / 1.45GB, 92.0MB/s  
+New Data Upload               : 100%|██████████|  657MB /  657MB, 43.3MB/s  
 Validating                    : ██████████| 100%            
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.32GB / 1.33GB            
-VAULT PUT OK repo=jasveerai92/phonevault-verify-v60test prefix=pkg-ae2c4dab pack_sha256=ae2c4dabe8616688666fb66b92b03106886b13cfb60b0b878402eefe7101c9e9 bytes=1328189440
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.43GB / 1.45GB            
+VAULT PUT OK repo=jasveerai92/phonevault-verify-v60test prefix=pkg-e79abd95 pack_sha256=e79abd95f7deb970ea0d5519fd77331bc1f24ba0165b36e86fca757f56ae0169 bytes=1448970240
 VAULT_OK=1
 
 ########## .pv-evidence-final/08a-roundtrip2-n.txt ##########
