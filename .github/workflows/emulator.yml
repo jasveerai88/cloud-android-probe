@@ -1,3 +1,16 @@
+# PhoneVault production workflow - v6.0 PRODUCTION FINAL (engineering
+# job #8, desk build only; NOT deployed). Base: production v5.9, via
+# job #7's production candidate. Graduates the r6 fstab posture phase
+# as a per-lineage rule (userdata_posture=fstab-unencrypted-v1
+# certificates patch their wakes' images; legacy lineages never
+# patch) + the capsule account-state extension in its FINAL form:
+# r9 adb-root-pull capture with host paircheck, r10 assembly source
+# facts + guest-root-tar dir staging, r11 merge construction with
+# the STRICT full-table check (no documented-absence exceptions)
+# + the adopt_capsule birth addition + the v5.10 env-hoist hygiene.
+# Design: CAPSULE-ACCOUNT-DESIGN.md s.11 + s.16. The mechanism this
+# mechanism carried here graded YES live on 2026-11-14 (test run
+# 43602751221). Atlas deploys; see STATE.md.
 name: cloud-android-emulator
 
 on:
@@ -65,6 +78,11 @@ on:
           - direct
           - steady
         default: direct
+        required: false
+      adopt_capsule:
+        description: "birth mode only: adopt the EXISTING identity capsule of this phone's lineage - the value is the expected android_id of the lineage head in the phone's production vault (Verify: c0716409a5e2386b). The birth fetches the vault CURRENT pack vault-first, verifies its capsule against its own pack certificate, replaces the just-captured capsule, applies it by root (android_id put last) and seals only if the guest reads that android_id before the pack seals. Empty = ordinary fresh-identity birth. Adoption carries the identity only: the old account enrolment and the GSF ID do not carry and are re-established by the follow-on gate."
+        type: string
+        default: ""
         required: false
   push:
     branches: [main]
@@ -307,6 +325,1028 @@ jobs:
             echo "AVD_OK=$AVD_OK"
           } >> "$GITHUB_ENV"
 
+          echo "===== V60 PRODUCTION POSTURE LIBRARY: materialise the shared fstab posture phase ONCE for this job ====="
+          echo "the lineage rule (PRODUCTION-PORT, CAPSULE-ACCOUNT-DESIGN.md section 11): a phone's userdata posture is a property of its LINEAGE, recorded in every pack certificate as userdata_posture=. A lineage is born patched (every production birth under this workflow) and every later wake of that lineage patches this run's images before booting; a lineage whose certificates carry no fstab-unencrypted-v1 value (Phone One, Phone Two, pre-v6.0 Verify) NEVER has its images patched and wakes exactly as v5.9 woke it. The phase itself is materialised here as a library file so step 2 (birth) and wake part 1 execute the IDENTICAL code - one phase, one code path, no drift."
+          PV60_LIB="${RUNNER_TEMP:-/tmp}/pv60-posture.sh"
+          mkdir -p "$(dirname "$PV60_LIB")"
+          cat > "$PV60_LIB" <<'PV60POSTUREEOF'
+          echo "===== V60 PRODUCTION POSTURE PHASE: strip FBE flags from the android-34 google_apis image fstab (shared library - executed after AVD creation for a birth, and before the wake boot for a patched lineage) ====="
+          echo "why: init/vold take the userdata encryption decision from the image fstab /data line. The levers tried before (run No.13: -feature -EncryptUserData and -qemu -append androidboot.qemu.encrypt=0) negotiate with that decision and lost - the fstab IS the decision. Removing fileencryption=/metadata_encryption=/keydirectory= makes the first /data format under this image plaintext, so the AVD-folder pack transports readable state."
+          PV60_SYSROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}/system-images/android-34/google_apis/x86_64"
+          PV60_FAIL=""
+          echo "posture: sysroot=$PV60_SYSROOT"
+          grep -i "EncryptUserData" "$PV60_SYSROOT/advancedFeatures.ini" 2>/dev/null | head -2
+          echo "posture: the advancedFeatures line above is the record run No.13 settled (the guest feature stays as the image declares it); this phase does not negotiate with it - it edits the fstab the guest actually obeys."
+          pv60_strip() {
+            sed -E -e '/^[[:space:]]*[^[:space:]]+[[:space:]]+\/data[[:space:]]/ { s/,fileencryption=[^, ]*//g; s/fileencryption=[^, ]*,//g; s/,metadata_encryption=[^, ]*//g; s/metadata_encryption=[^, ]*,//g; s/,keydirectory=[^, ]*//g; s/keydirectory=[^, ]*,//g; s/,inlinecrypt//g; s/inlinecrypt,//g; s/,,+/,/g }'
+          }
+          pv60_patch_file() {
+            # $1 = host file to patch in place; $2 = display label (default $1).
+            # Sets PV60_PF: nodata (no /data line - not governing) | clean
+            # (governing, already flag-free) | patched (governing, flags stripped).
+            local F="$1" DISP="${2:-$1}" BEFORE AFTER
+            PV60_PF=nodata
+            BEFORE="$(awk '$2=="/data"' "$F" 2>/dev/null)"
+            if [ -z "$BEFORE" ]; then echo "posture: $DISP - no /data line, not a governing fstab (skipped)"; return 0; fi
+            echo "posture: $DISP /data BEFORE: $BEFORE"
+            if ! printf '%s' "$BEFORE" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then echo "posture: $DISP - /data line carries no FBE flags (already unencrypted posture)"; PV60_PF=clean; return 0; fi
+            pv60_strip < "$F" > "$F.pv60tmp" || { echo "posture: $DISP - strip FAILED"; return 1; }
+            AFTER="$(awk '$2=="/data"' "$F.pv60tmp")"
+            echo "posture: $DISP /data AFTER:  $AFTER"
+            if printf '%s' "$AFTER" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then echo "posture: $DISP - FBE flags survive the strip - FAILED"; rm -f "$F.pv60tmp"; return 1; fi
+            case "$AFTER" in *wait*) : ;; *) echo "posture: $DISP - /data line lost its wait flag - FAILED"; rm -f "$F.pv60tmp"; return 1 ;; esac
+            mv "$F.pv60tmp" "$F"; PV60_PF=patched; echo "posture: $DISP PATCHED"; return 0
+          }
+          # v60-r5 governing-copy accounting: the r4 phase could print POSTURE:
+          # APPLIED over an EMPTY set of patched copies (live runs No.5/No.6:
+          # no fstab in the ramdisk, none at vendor /etc - APPLIED was vacuous
+          # and run A still read ro.crypto.state=encrypted). From r5 on, every
+          # governing copy (an fstab.* file whose content carries a /data line)
+          # is counted with its component:path label, and the verdict at the
+          # end of the phase is computed from these counters - zero governing
+          # copies found anywhere is a hard NOT APPLIED, never an APPLIED.
+          PV60_GOV_FOUND=0; PV60_GOV_PATCHED=0; PV60_GOV_CLEAN=0; PV60_GOV_PATHS=""; PV60_PATCHED_PATHS=""
+          pv60_count() {
+            # $1 = component:path label of the copy pv60_patch_file just ran on
+            case "$PV60_PF" in
+              patched) PV60_GOV_FOUND=$((PV60_GOV_FOUND+1)); PV60_GOV_PATCHED=$((PV60_GOV_PATCHED+1)); PV60_GOV_PATHS="${PV60_GOV_PATHS:+$PV60_GOV_PATHS, }$1"; PV60_PATCHED_PATHS="${PV60_PATCHED_PATHS:+$PV60_PATCHED_PATHS, }$1" ;;
+              clean) PV60_GOV_FOUND=$((PV60_GOV_FOUND+1)); PV60_GOV_CLEAN=$((PV60_GOV_CLEAN+1)); PV60_GOV_PATHS="${PV60_GOV_PATHS:+$PV60_GOV_PATHS, }$1" ;;
+            esac
+          }
+          RD="$PV60_SYSROOT/ramdisk.img"
+          if [ ! -s "$RD" ]; then echo "POSTURE: NOT APPLIED - ramdisk.img missing at $RD"; exit 1; fi
+          RDMAGIC="$(od -An -tx1 -N4 "$RD" 2>/dev/null | tr -d ' \n')"
+          RDTMP="$(mktemp -d)"; RDFMT=""
+          # v60-r3 LZ4-LEGACY tooling: the android-34 google_apis ramdisk ships
+          # as an LZ4 legacy frame (magic 02214c18 = 0x184C2102), which the
+          # format table below did not know (live run No.3 aborted on it, by
+          # design). Backends, tried in order: (1) the lz4 CLI - preinstalled
+          # on GitHub ubuntu-24.04 runners (the actions/runner-images
+          # Ubuntu2404 manifest lists lz4 1.9.4); it decodes legacy frames by
+          # magic and writes them with -l. (2) a bounded apt attempt to
+          # restore the CLI if a future image drops it. (3) an embedded
+          # python3 codec - legacy framing done here over the lz4 module's
+          # raw block codec - after a bounded pip attempt if the module is
+          # missing. If no backend can be obtained, the lz4legacy branch
+          # fails closed like every other unhandled format.
+          PV60_LZ4LEG=""; PV60_LZ4PY="$RDTMP/pv60_lz4legacy.py"
+          pv60_lz4leg_setup() {
+            # v60-r6: the embedded python codec is materialised FIRST, before
+            # backend selection: the multi-frame ramdisk flow decodes through
+            # it on every host (pv60_frame_dec / pv60_frame_enc below), so
+            # the codec file must exist even when the CLI backend wins
+            # selection for the single-stream paths.
+            cat > "$PV60_LZ4PY" <<'PV60PYEOF'
+          import struct, sys
+          import lz4.block
+          MAGIC = b"\x02\x21\x4c\x18"
+          MAXBLK = 8 * 1024 * 1024
+          def dec(data):
+              if data[:4] != MAGIC:
+                  raise SystemExit("pv60 lz4legacy: bad magic")
+              out = bytearray(); pos = 4
+              while True:
+                  if pos + 4 > len(data):
+                      raise SystemExit("pv60 lz4legacy: truncated block header")
+                  (size,) = struct.unpack_from("<I", data, pos); pos += 4
+                  if size == 0:
+                      return bytes(out)
+                  raw = bool(size & 0x80000000); n = size & 0x7FFFFFFF
+                  payload = data[pos:pos + n]
+                  if len(payload) != n:
+                      raise SystemExit("pv60 lz4legacy: truncated block payload")
+                  pos += n
+                  out += payload if raw else lz4.block.decompress(payload, uncompressed_size=MAXBLK)
+          def enc(data):
+              out = bytearray(MAGIC)
+              for off in range(0, len(data), MAXBLK):
+                  chunk = data[off:off + MAXBLK]
+                  comp = lz4.block.compress(chunk, store_size=False)
+                  if len(comp) >= len(chunk):
+                      out += struct.pack("<I", len(chunk) | 0x80000000); out += chunk
+                  else:
+                      out += struct.pack("<I", len(comp)); out += comp
+              out += b"\x00\x00\x00\x00"
+              return bytes(out)
+          _data = sys.stdin.buffer.read()
+          sys.stdout.buffer.write(dec(_data) if sys.argv[1] == "dec" else enc(_data))
+          PV60PYEOF
+            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli ($(lz4 --version 2>/dev/null | head -1))"; return 0; fi
+            if sudo -n true 2>/dev/null; then sudo -n apt-get update -qq >/dev/null 2>&1; sudo -n apt-get install -y -qq lz4 >/dev/null 2>&1; fi
+            if command -v lz4 >/dev/null 2>&1; then PV60_LZ4LEG=cli; echo "posture: lz4-legacy backend=cli (apt-restored)"; return 0; fi
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then PV60_LZ4LEG=py; echo "posture: lz4-legacy backend=py (embedded legacy codec over the python3 lz4 module)"; return 0; fi
+            python3 -m pip install --user --break-system-packages --quiet lz4 >/dev/null 2>&1
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then PV60_LZ4LEG=py; echo "posture: lz4-legacy backend=py (pip-restored lz4 module)"; return 0; fi
+            return 1
+          }
+          pv60_lz4leg_dec() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -dc; else python3 "$PV60_LZ4PY" dec; fi; }
+          pv60_lz4leg_enc() { if [ "$PV60_LZ4LEG" = "cli" ]; then lz4 -l -f -c; else python3 "$PV60_LZ4PY" enc; fi; }
+          # v60-r6: the multi-frame ramdisk flow decodes and encodes ONLY
+          # through the embedded python codec, on every host - never through
+          # the lz4 CLI. Live run 0' (43567013244) died at "ramdisk frame 0
+          # decode failed" while the desk rehearsal on the genuine slices
+          # passed: the desk VM has no lz4 CLI (setup picked this codec),
+          # the runner has the CLI (setup picked it). Mechanism, proven on
+          # the genuine bytes with a locally built lz4 1.9.4: the legacy
+          # streams here are EOF-terminated (magic + blocks, NO zero
+          # end-mark - the CLI's own -l encoder writes none either). The
+          # splitter appends the 4-byte zero end-mark this codec requires
+          # (its dec() returns only at a zero block size and reports a
+          # truncated header at EOF). The CLI's legacy reader has NO
+          # end-mark case (programs/lz4io.c, LZ4IO_decodeLegacyStream): it
+          # ends a legacy stream only at EOF or at an oversized "block
+          # size" (the next frame's magic, held in g_magicRead); a zero
+          # block size is passed to LZ4_decompress_safe as a zero-length
+          # block, which returns -1 (lib/lz4.c: srcSize==0 -> -1), so the
+          # CLI exits 54 "Decoding Failed ! Corrupted input detected !" -
+          # AFTER writing the full byte-correct output, which the phase
+          # discarded on the exit code (stderr was sent to /dev/null). The
+          # CLI would also have failed the repack: it writes no end-mark
+          # when encoding, so a re-encoded no-end-mark frame lacks the
+          # tail the term-style check expects. One codec for frames on
+          # every host removes the whole desk/live divergence class: the
+          # desk rehearsal, the fixture and the live run now execute the
+          # identical decode of the identical slices. The CLI stays in use
+          # only where it is proven (the single-stream whole-file path,
+          # whose concatenated frames it handles natively via g_magicRead).
+          pv60_lz4py_ensure() {
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then return 0; fi
+            python3 -m pip install --user --break-system-packages --quiet lz4 >/dev/null 2>&1
+            if python3 -c 'import lz4.block' >/dev/null 2>&1; then return 0; fi
+            return 1
+          }
+          pv60_frame_dec() { python3 "$PV60_LZ4PY" dec; }
+          pv60_frame_enc() { python3 "$PV60_LZ4PY" enc; }
+          pv60_errtail() { tail -c 300 "$1" 2>/dev/null | tr '\n' ' '; }
+          # v60-r4 NEWC tooling: live run No.4 got one layer deeper - the
+          # LZ4-legacy decode worked, then GNU cpio died extracting the
+          # ramdisk: "cpio: dev/null: Cannot mknod: Operation not
+          # permitted" (dev/console, dev/urandom likewise) - device
+          # nodes cannot be created by the unprivileged runner user.
+          # So the ramdisk archive path no longer uses the cpio binary
+          # at all: the embedded python3 newc implementation below
+          # parses every entry, writes only regular files, directories
+          # and symlinks to the work tree, and carries device nodes,
+          # fifos and sockets purely as archive RECORDS (every header
+          # field, in a JSON manifest beside the tree) that the repack
+          # re-emits verbatim - no host mknod, no cpio binary, nothing
+          # dropped. Hardlinked regular files keep the newc convention
+          # end to end: the archive holds the data on the LAST group
+          # member; extract writes that data to every member; repack
+          # re-emits it on the last member only. All metadata (mode,
+          # uid, gid, nlink, mtime, dev and rdev numbers) round-trips
+          # from the manifest, so the only bytes that can change in
+          # the whole archive are the patched fstab's.
+          PV60_CPIOPY="$RDTMP/pv60_newc.py"
+          pv60_newc_setup() {
+            cat > "$PV60_CPIOPY" <<'PV60CPIEOF'
+          import json, os, stat, sys
+          HDR = 110
+          def pad4(n):
+              return (4 - n % 4) % 4
+          def die(msg):
+              raise SystemExit("pv60 newc: " + msg)
+          def kind(mode):
+              t = stat.S_IFMT(mode)
+              for bits, name in ((stat.S_IFREG, "reg"), (stat.S_IFDIR, "dir"), (stat.S_IFLNK, "lnk"), (stat.S_IFCHR, "chr"), (stat.S_IFBLK, "blk"), (stat.S_IFIFO, "fifo"), (stat.S_IFSOCK, "sock")):
+                  if t == bits:
+                      return name
+              return "other"
+          def parse(data):
+              recs = []
+              pos = 0
+              while pos + HDR <= len(data):
+                  if data[pos:pos + 6] != b"070701":
+                      die("bad magic at offset %d" % pos)
+                  try:
+                      f = [int(data[pos + 6 + i * 8:pos + 14 + i * 8], 16) for i in range(13)]
+                  except ValueError:
+                      die("unparseable header at offset %d" % pos)
+                  namesize, filesize = f[11], f[6]
+                  if namesize < 1 or pos + HDR + namesize > len(data):
+                      die("truncated name at offset %d" % pos)
+                  name = data[pos + HDR:pos + HDR + namesize].split(b"\0")[0].decode("utf-8", "surrogateescape")
+                  pos += HDR + namesize + pad4(HDR + namesize)
+                  if pos + filesize > len(data):
+                      die("truncated payload for %r" % name)
+                  payload = data[pos:pos + filesize]
+                  pos += filesize + pad4(filesize)
+                  if name == "TRAILER!!!":
+                      return recs
+                  recs.append({"name": name, "ino": f[0], "mode": f[1], "uid": f[2], "gid": f[3], "nlink": f[4], "mtime": f[5], "devmajor": f[7], "devminor": f[8], "rmajor": f[9], "rminor": f[10], "check": f[12], "payload": payload})
+              die("archive ended without TRAILER!!!")
+          def relpath(name):
+              if name.startswith("/"):
+                  die("absolute entry name refused: %r" % name)
+              n = name
+              while n.startswith("./"):
+                  n = n[2:]
+              if n in ("", "."):
+                  return ""
+              if any(p == ".." for p in n.split("/")):
+                  die("entry name escapes the work tree: %r" % name)
+              return n
+          def groups_of(recs):
+              groups = {}
+              for idx, r in enumerate(recs):
+                  if kind(r["mode"]) == "reg" and r["nlink"] > 1:
+                      groups.setdefault((r["ino"], r["devmajor"], r["devminor"]), []).append(idx)
+              return {k: v for k, v in groups.items() if len(v) > 1}
+          def do_extract(tree, manifest_path):
+              recs = parse(sys.stdin.buffer.read())
+              member = {}
+              for idxs in groups_of(recs).values():
+                  payload = b""
+                  for i in idxs:
+                      if recs[i]["payload"]:
+                          payload = recs[i]["payload"]
+                  for i in idxs:
+                      member[i] = payload
+              os.makedirs(tree, exist_ok=True)
+              dir_fixups = []
+              manifest = []
+              for idx, r in enumerate(recs):
+                  k = kind(r["mode"])
+                  rel = relpath(r["name"])
+                  special = k in ("chr", "blk", "fifo", "sock")
+                  if special and r["payload"]:
+                      die("special entry %r carries a payload - refusing" % r["name"])
+                  if k == "other":
+                      die("unsupported entry type (mode %o) in %r" % (r["mode"], r["name"]))
+                  manifest.append({"name": r["name"], "rel": rel, "kind": k, "ino": r["ino"], "mode": r["mode"], "uid": r["uid"], "gid": r["gid"], "nlink": r["nlink"], "mtime": r["mtime"], "devmajor": r["devmajor"], "devminor": r["devminor"], "rmajor": r["rmajor"], "rminor": r["rminor"], "check": r["check"], "group": idx in member})
+                  if rel == "" or special:
+                      continue
+                  path = os.path.join(tree, rel)
+                  parent = os.path.dirname(path)
+                  if parent:
+                      os.makedirs(parent, exist_ok=True)
+                  if k == "dir":
+                      os.makedirs(path, exist_ok=True)
+                      dir_fixups.append((path, r))
+                  elif k == "lnk":
+                      if os.path.lexists(path):
+                          os.unlink(path)
+                      os.symlink(r["payload"].decode("utf-8", "surrogateescape"), path)
+                      os.utime(path, (r["mtime"], r["mtime"]), follow_symlinks=False)
+                  else:
+                      with open(path, "wb") as fh:
+                          fh.write(member.get(idx, r["payload"]))
+                      os.chmod(path, r["mode"] & 0o7777)
+                      os.utime(path, (r["mtime"], r["mtime"]))
+              for path, r in dir_fixups:
+                  os.chmod(path, r["mode"] & 0o7777)
+                  os.utime(path, (r["mtime"], r["mtime"]))
+              with open(manifest_path, "w") as fh:
+                  json.dump(manifest, fh)
+          def emit(out, name, ino, mode, uid, gid, nlink, mtime, data, devmajor, devminor, rmajor, rminor, check):
+              nameb = name.encode("utf-8", "surrogateescape") + b"\0"
+              fields = [ino, mode, uid, gid, nlink, mtime, len(data), devmajor, devminor, rmajor, rminor, len(nameb), check]
+              out += ("070701" + "".join("%08x" % (v & 0xFFFFFFFF) for v in fields)).encode()
+              out += nameb
+              out += b"\0" * pad4(HDR + len(nameb))
+              out += data
+              out += b"\0" * pad4(len(data))
+          def do_repack(tree, manifest_path):
+              with open(manifest_path) as fh:
+                  manifest = json.load(fh)
+              groups = {}
+              for idx, m in enumerate(manifest):
+                  if m["kind"] == "reg" and m["group"]:
+                      groups.setdefault((m["ino"], m["devmajor"], m["devminor"]), []).append(idx)
+              lasts = set()
+              for idxs in groups.values():
+                  if len(idxs) > 1:
+                      lasts.add(idxs[-1])
+              out = bytearray()
+              for idx, m in enumerate(manifest):
+                  k = m["kind"]
+                  if k in ("chr", "blk", "fifo", "sock", "dir"):
+                      data = b""
+                  elif k == "lnk":
+                      path = os.path.join(tree, m["rel"])
+                      if not os.path.islink(path):
+                          die("symlink missing from the work tree: %r" % m["name"])
+                      data = os.readlink(path).encode("utf-8", "surrogateescape")
+                  elif k == "reg":
+                      if m["group"] and idx not in lasts:
+                          data = b""
+                      else:
+                          path = os.path.join(tree, m["rel"])
+                          if os.path.islink(path) or not os.path.isfile(path):
+                              die("file missing from the work tree: %r" % m["name"])
+                          with open(path, "rb") as fh:
+                              data = fh.read()
+                  else:
+                      die("unsupported entry type in manifest: %r" % m["name"])
+                  emit(out, m["name"], m["ino"], m["mode"], m["uid"], m["gid"], m["nlink"], m["mtime"], data, m["devmajor"], m["devminor"], m["rmajor"], m["rminor"], m["check"])
+              emit(out, "TRAILER!!!", 0, 0, 0, 0, 1, 0, b"", 0, 0, 0, 0, 0)
+              out += b"\0" * ((512 - len(out) % 512) % 512)
+              sys.stdout.buffer.write(bytes(out))
+          if len(sys.argv) != 4 or sys.argv[1] not in ("extract", "repack"):
+              raise SystemExit("usage: pv60_newc.py extract|repack <tree> <manifest>")
+          if sys.argv[1] == "extract":
+              do_extract(sys.argv[2], sys.argv[3])
+          else:
+              do_repack(sys.argv[2], sys.argv[3])
+          PV60CPIEOF
+          }
+          pv60_newc_extract() { pv60_newc_setup && python3 "$PV60_CPIOPY" extract "$1" "$2"; }
+          pv60_newc_repack() { pv60_newc_setup && python3 "$PV60_CPIOPY" repack "$RDTMP/root" "$RDTMP/root.records.json"; }
+            PV60_RD_DONE=""
+            if [ "$RDMAGIC" = 02214c18 ] && [ -z "$PV60_FAIL" ]; then
+              # v60-r5 MULTI-FRAME ramdisk handling. Desk inspection of the
+              # genuine image (x86_64-34_r14.zip, sha1 verified) proved
+              # ramdisk.img is TWO concatenated LZ4 legacy frames: frame 0 is
+              # the generic ramdisk (16 entries, no fstab - the r4 live
+              # observation was true of frame 0 only) and frame 1 is the
+              # first-stage ramdisk carrying first_stage_ramdisk/fstab.ranchu
+              # WITH the flagged /data line. Google's encoder writes the
+              # frames back to back with NO zero end-mark between them (the
+              # next frame's magic is the boundary - the rule the lz4 CLI's
+              # legacy reader applies), so a reader that walks blocks to the
+              # end-mark, or an extractor that stops at the first cpio
+              # TRAILER, silently drops frame 1 and its governing copy.
+              # Split the frames structurally (boundary = end-mark, next
+              # magic, or EOF), run the usual decode/extract/patch/repack per
+              # frame, and re-concatenate preserving each frame's original
+              # end-mark style.
+              # v60-r6: per-frame decode/encode uses ONLY the embedded
+              # python codec (pv60_frame_dec / pv60_frame_enc), and decoder
+              # stderr is captured into every frame failure line - the lz4
+              # CLI's legacy reader rejects the end-marked slices written
+              # here (see the r6 note at pv60_frame_dec below).
+              PV60_RD_DONE=1
+              if pv60_lz4leg_setup; then :; else PV60_FAIL="ramdisk lz4-legacy tooling unavailable for the multi-frame flow"; fi
+              if [ -z "$PV60_FAIL" ]; then
+                if pv60_lz4py_ensure; then echo "posture: ramdisk multi-frame codec=py (embedded python codec, identical on every host - v60-r6)"; else PV60_FAIL="ramdisk multi-frame flow needs the embedded python lz4 codec, but the python3 lz4 module could not be obtained"; fi
+              fi
+              FRD="$RDTMP/frames"; mkdir -p "$FRD/raw"
+              if [ -z "$PV60_FAIL" ]; then
+                NFR="$(python3 - "$RD" "$FRD/raw" <<'PV60SPLITEOF'
+          import os, struct, sys
+          data = open(sys.argv[1], 'rb').read()
+          MAGIC = b'\x02\x21\x4c\x18'
+          if data[:4] != MAGIC:
+              raise SystemExit('not an lz4 legacy stream')
+          pos = 0
+          count = 0
+          while pos < len(data):
+              if data[pos:pos + 4] != MAGIC:
+                  raise SystemExit('lz4 frame %d: bad magic at %d' % (count, pos))
+              start = pos
+              pos += 4
+              had_term = 0
+              while pos < len(data):
+                  (size,) = struct.unpack_from('<I', data, pos)
+                  if size == 0:
+                      had_term = 1
+                      pos += 4
+                      break
+                  if data[pos:pos + 4] == MAGIC:
+                      break
+                  pos += 4 + (size & 0x7FFFFFFF)
+              orig = data[start:pos]
+              with open(os.path.join(sys.argv[2], 'frame%d.orig' % count), 'wb') as f:
+                  f.write(orig)
+              with open(os.path.join(sys.argv[2], 'frame%d.lz4' % count), 'wb') as f:
+                  f.write(orig if had_term else orig + b'\x00\x00\x00\x00')
+              with open(os.path.join(sys.argv[2], 'frame%d.term' % count), 'w') as f:
+                  f.write('1' if had_term else '0')
+              count += 1
+          print(count)
+          PV60SPLITEOF
+          )" || PV60_FAIL="ramdisk lz4 frame split failed"
+              fi
+              echo "posture: ramdisk.img lz4-legacy frames: ${NFR:-0}"
+              FR_ANY=0; FR_CAND=0
+              if [ -z "$PV60_FAIL" ]; then
+                FI=0
+                while [ "$FI" -lt "${NFR:-0}" ]; do
+                  FRC="$FRD/frame$FI.cpio"; FRR="$FRD/root$FI"; mkdir -p "$FRR"
+                  if ! pv60_frame_dec < "$FRD/raw/frame$FI.lz4" > "$FRC" 2>"$FRD/dec$FI.err"; then PV60_FAIL="ramdisk frame $FI decode failed (python codec): $(pv60_errtail "$FRD/dec$FI.err")"; break; fi
+                  if ! pv60_newc_extract "$FRR" "$FRD/root$FI.records.json" < "$FRC"; then PV60_FAIL="ramdisk frame $FI cpio extract failed"; break; fi
+                  echo "posture: ramdisk.img frame $FI top-level listing (names only):"
+                  ls -A "$FRR" 2>/dev/null | while IFS= read -r PV60_N; do echo "posture:   ramdisk frame $FI top: $PV60_N"; done
+                  echo "posture: ramdisk.img frame $FI holds $(find "$FRR" -type f 2>/dev/null | wc -l) regular files in total"
+                  find "$FRR" -type f -name 'fstab.*' 2>/dev/null | sort > "$FRD/cand$FI.txt"
+                  if [ -s "$FRD/cand$FI.txt" ]; then echo 1 > "$FRD/hascand$FI"; FR_ANY=1; fi
+                  while IFS= read -r FF; do
+                    if [ -z "$FF" ]; then continue; fi
+                    FR_CAND=$((FR_CAND+1))
+                    REL="${FF#$FRR/}"
+                    echo "posture: candidate ramdisk[frame$FI]:$REL"
+                    pv60_patch_file "$FF" "ramdisk[frame$FI]:$REL" || { PV60_FAIL="ramdisk frame $FI fstab patch failed"; break; }
+                    pv60_count "ramdisk[frame$FI]:$REL"
+                  done < "$FRD/cand$FI.txt"
+                  if [ -n "$PV60_FAIL" ]; then break; fi
+                  FI=$((FI+1))
+                done
+              fi
+              if [ -z "$PV60_FAIL" ] && [ "$FR_ANY" = 1 ]; then
+                # repack ONLY the frames that carried a candidate; untouched
+                # frames are re-emitted from their ORIGINAL byte range, and a
+                # repacked frame keeps the original's end-mark style.
+                : > "$FRD/joined.lz4"
+                FI=0
+                while [ "$FI" -lt "${NFR:-0}" ]; do
+                  if [ -f "$FRD/hascand$FI" ]; then
+                    pv60_newc_setup
+                    if ! python3 "$PV60_CPIOPY" repack "$FRD/root$FI" "$FRD/root$FI.records.json" > "$FRD/new$FI.cpio"; then PV60_FAIL="ramdisk frame $FI repack failed"; break; fi
+                    if ! pv60_frame_enc < "$FRD/new$FI.cpio" > "$FRD/new$FI.lz4" 2>"$FRD/enc$FI.err"; then PV60_FAIL="ramdisk frame $FI re-encode failed (python codec): $(pv60_errtail "$FRD/enc$FI.err")"; break; fi
+                    if [ "$(cat "$FRD/raw/frame$FI.term")" = "0" ]; then
+                      if [ "$(tail -c 4 "$FRD/new$FI.lz4" | od -An -tx1 | tr -d ' \n')" = "00000000" ]; then
+                        truncate -s -4 "$FRD/new$FI.lz4"
+                      else
+                        PV60_FAIL="ramdisk frame $FI re-encode lacks the expected end-mark"; break
+                      fi
+                    fi
+                    cat "$FRD/new$FI.lz4" >> "$FRD/joined.lz4"
+                  else
+                    cat "$FRD/raw/frame$FI.orig" >> "$FRD/joined.lz4"
+                  fi
+                  FI=$((FI+1))
+                done
+              fi
+              if [ -z "$PV60_FAIL" ] && [ "$FR_ANY" = 1 ]; then
+                # round-trip verify the JOINED image: split again, decode and
+                # extract every frame, candidate parity with what was patched,
+                # and no FBE flags left on any fstab /data line anywhere.
+                VFD="$RDTMP/vframes"; mkdir -p "$VFD/raw"
+                NVF="$(python3 - "$FRD/joined.lz4" "$VFD/raw" <<'PV60SPLITEOF'
+          import os, struct, sys
+          data = open(sys.argv[1], 'rb').read()
+          MAGIC = b'\x02\x21\x4c\x18'
+          if data[:4] != MAGIC:
+              raise SystemExit('not an lz4 legacy stream')
+          pos = 0
+          count = 0
+          while pos < len(data):
+              if data[pos:pos + 4] != MAGIC:
+                  raise SystemExit('lz4 frame %d: bad magic at %d' % (count, pos))
+              start = pos
+              pos += 4
+              had_term = 0
+              while pos < len(data):
+                  (size,) = struct.unpack_from('<I', data, pos)
+                  if size == 0:
+                      had_term = 1
+                      pos += 4
+                      break
+                  if data[pos:pos + 4] == MAGIC:
+                      break
+                  pos += 4 + (size & 0x7FFFFFFF)
+              orig = data[start:pos]
+              with open(os.path.join(sys.argv[2], 'frame%d.orig' % count), 'wb') as f:
+                  f.write(orig)
+              with open(os.path.join(sys.argv[2], 'frame%d.lz4' % count), 'wb') as f:
+                  f.write(orig if had_term else orig + b'\x00\x00\x00\x00')
+              with open(os.path.join(sys.argv[2], 'frame%d.term' % count), 'w') as f:
+                  f.write('1' if had_term else '0')
+              count += 1
+          print(count)
+          PV60SPLITEOF
+          )" || PV60_FAIL="ramdisk verify frame split failed"
+                if [ -z "$PV60_FAIL" ] && [ "$NVF" != "$NFR" ]; then PV60_FAIL="ramdisk repack frame count changed ($NFR -> $NVF)"; fi
+                V_CAND=0
+                if [ -z "$PV60_FAIL" ]; then
+                  FI=0
+                  while [ "$FI" -lt "${NVF:-0}" ]; do
+                    VRR="$VFD/root$FI"; mkdir -p "$VRR"
+                    if ! pv60_frame_dec < "$VFD/raw/frame$FI.lz4" > "$VFD/frame$FI.cpio" 2>"$VFD/dec$FI.err"; then PV60_FAIL="ramdisk verify frame $FI decode failed (python codec): $(pv60_errtail "$VFD/dec$FI.err")"; break; fi
+                    if ! pv60_newc_extract "$VRR" "$VFD/root$FI.records.json" < "$VFD/frame$FI.cpio"; then PV60_FAIL="ramdisk verify frame $FI extract failed"; break; fi
+                    find "$VRR" -type f -name 'fstab.*' 2>/dev/null | sort > "$VFD/cand$FI.txt"
+                    while IFS= read -r VF; do
+                      if [ -z "$VF" ]; then continue; fi
+                      V_CAND=$((V_CAND+1))
+                      if awk '$2=="/data"' "$VF" 2>/dev/null | grep -qE 'fileencryption=|metadata_encryption=|keydirectory='; then PV60_FAIL="ramdisk verify frame $FI: FBE flags survive"; break; fi
+                    done < "$VFD/cand$FI.txt"
+                    if [ -n "$PV60_FAIL" ]; then break; fi
+                    FI=$((FI+1))
+                  done
+                fi
+                if [ -z "$PV60_FAIL" ] && [ "$V_CAND" != "$FR_CAND" ]; then PV60_FAIL="ramdisk repack verify: fstab count changed ($FR_CAND -> $V_CAND)"; fi
+                if [ -z "$PV60_FAIL" ]; then
+                  cp "$FRD/joined.lz4" "$RD"
+                  echo "posture: ramdisk.img re-emitted as $NFR lz4-legacy frames with patched fstab content (verified)"
+                fi
+              fi
+              if [ -n "$PV60_FAIL" ]; then echo "POSTURE: NOT APPLIED - $PV60_FAIL"; exit 1; fi
+            fi
+            if [ -z "$PV60_RD_DONE" ]; then
+          case "$RDMAGIC" in
+            1f8b*) RDFMT=gzip; gzip -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk gzip extract failed" ;;
+            04224c41) RDFMT=lz4frame; if command -v lz4 >/dev/null 2>&1; then lz4 -dc "$RD" > "$RDTMP/rd.cpio" 2>/dev/null || PV60_FAIL="ramdisk lz4 extract failed"; else PV60_FAIL="ramdisk is lz4-frame but no lz4 tool exists on the runner"; fi ;;
+            30373037) RDFMT=cpio; cp "$RD" "$RDTMP/rd.cpio" ;;
+            02214c18) RDFMT=lz4legacy; if pv60_lz4leg_setup; then pv60_lz4leg_dec < "$RD" > "$RDTMP/rd.cpio" 2>"$RDTMP/rddec.err" || PV60_FAIL="ramdisk lz4-legacy extract failed (decoder): $(pv60_errtail "$RDTMP/rddec.err")"; else PV60_FAIL="ramdisk is LZ4-legacy but no lz4 tooling could be obtained on the runner (no lz4 CLI, apt restore failed, no python3 lz4 module)"; fi ;;
+            *) PV60_FAIL="ramdisk.img format unrecognised (magic $RDMAGIC) - refusing to guess" ;;
+          esac
+          if [ -z "$PV60_FAIL" ]; then
+            mkdir -p "$RDTMP/root"
+            pv60_newc_extract "$RDTMP/root" "$RDTMP/root.records.json" < "$RDTMP/rd.cpio" || PV60_FAIL="ramdisk cpio extract failed"
+          fi
+          if [ -z "$PV60_FAIL" ]; then
+            # v60-r5: explain the ramdisk observation instead of asserting it -
+            # live run No.5 found no fstab.* in the ramdisk and the phase log
+            # could not show what the ramdisk DOES carry. Print the top level.
+            echo "posture: ramdisk.img top-level listing (names only):"
+            ls -A "$RDTMP/root" 2>/dev/null | while IFS= read -r PV60_N; do echo "posture:   ramdisk top: $PV60_N"; done
+            echo "posture: ramdisk.img holds $(find "$RDTMP/root" -type f 2>/dev/null | wc -l) regular files in total"
+          fi
+          RD_FOUND=0
+          if [ -z "$PV60_FAIL" ]; then
+            while IFS= read -r FF; do
+              if [ -z "$FF" ]; then continue; fi
+              RD_FOUND=1
+              echo "posture: candidate ramdisk:${FF#$RDTMP/root/}"
+              pv60_patch_file "$FF" || PV60_FAIL="ramdisk fstab $FF unpatchable"
+              if [ -z "$PV60_FAIL" ]; then pv60_count "ramdisk:${FF#$RDTMP/root/}"; fi
+            done <<EOF_PV60
+          $(find "$RDTMP/root" -name 'fstab.*' -type f 2>/dev/null)
+          EOF_PV60
+            if [ "$RD_FOUND" != "1" ]; then echo "posture: no fstab.* found inside ramdisk.img (the governing copy may live in vendor.img or system.img - both are searched exhaustively below)"; fi
+          fi
+          if [ -z "$PV60_FAIL" ] && [ "$RD_FOUND" = "1" ]; then
+            case "$RDFMT" in
+              gzip) pv60_newc_repack | gzip -9 > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
+              lz4frame) pv60_newc_repack | lz4 -f -9 -c > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
+              cpio) pv60_newc_repack > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
+              lz4legacy) pv60_newc_repack | pv60_lz4leg_enc > "$RDTMP/ramdisk.new" || PV60_FAIL="ramdisk repack failed" ;;
+            esac
+          fi
+          if [ -z "$PV60_FAIL" ] && [ "$RD_FOUND" = "1" ]; then
+            cp "$RD" "$RDTMP/ramdisk.orig.bak"; mv "$RDTMP/ramdisk.new" "$RD"
+            mkdir -p "$RDTMP/verify"; VOK=0
+            case "$RDFMT" in
+              gzip) gzip -dc "$RD" 2>/dev/null | pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" && VOK=1 ;;
+              lz4frame) lz4 -dc "$RD" 2>/dev/null | pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" && VOK=1 ;;
+              cpio) pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" < "$RD" && VOK=1 ;;
+              lz4legacy) pv60_lz4leg_dec < "$RD" 2>/dev/null | pv60_newc_extract "$RDTMP/verify" "$RDTMP/verify.records.json" && VOK=1 ;;
+            esac
+            VLINE="$(find "$RDTMP/verify" -name 'fstab.*' -type f -exec cat {} + 2>/dev/null | awk '$2=="/data"')"
+            echo "posture: ramdisk repack verify: extract_ok=$VOK /data line now: $VLINE"
+            RDDATA="$(find "$RDTMP/root" -name 'fstab.*' -type f -exec cat {} + 2>/dev/null | awk '$2=="/data"')"
+            VFAIL=""
+            if [ "$VOK" != "1" ]; then VFAIL="re-extract of the repacked ramdisk failed"; fi
+            if [ -n "$RDDATA" ] && [ -z "$VLINE" ]; then VFAIL="the patched /data line is missing from the repacked ramdisk"; fi
+            if printf '%s' "$VLINE" | grep -Eq 'fileencryption=|metadata_encryption=|keydirectory='; then VFAIL="FBE flags survive in the repacked ramdisk"; fi
+            if [ -n "$VFAIL" ]; then PV60_FAIL="ramdisk repack verification failed ($VFAIL)"; cp "$RDTMP/ramdisk.orig.bak" "$RD"; fi
+          fi
+          fi
+            # v60-r5 EXHAUSTIVE image-component fstab discovery. r4 searched
+            # the ramdisk and vendor.img:/etc only, found nothing, and printed
+            # APPLIED over an empty set. Desk inspection of the GENUINE SDK
+            # package (x86_64-34_r14.zip, sha1 verified against the SDK repo
+            # XML) shows the real layout of this image set:
+            #   - vendor.img and system.img are GPT-partitioned DISK images,
+            #     not bare filesystems - r4's debugfs call on the whole file
+            #     died with "Bad magic number" (stderr swallowed), which is why
+            #     vendor looked empty. vendor.img holds one partition "vendor"
+            #     (ext4 at byte offset 1048576) with /etc/fstab.ranchu inside.
+            #   - system.img holds GPT partitions "vbmeta" and "super"; super
+            #     is an LP (dynamic partitions) container whose logical
+            #     partitions include ANOTHER ext4 "vendor" carrying a second
+            #     /etc/fstab.ranchu, plus system (ext4, only the non-governing
+            #     /system/etc/fstab.postinstall), system_ext, product and
+            #     system_dlkm (erofs).
+            #   - the governing /data line is byte-identical in every copy.
+            # So the search walks containers recursively: sparse decode -> GPT
+            # partition carve -> LP logical-partition carve -> filesystem. At
+            # the filesystem level, ext4 is walked and patched unprivileged via
+            # debugfs (rm/write + sif restore, re-read verified); erofs and
+            # unknown types go through the guarded sudo loop-mount branch,
+            # which enumerates read-only when it cannot patch and fails closed
+            # only on real machinery errors. Every governing copy found is
+            # counted in the PV60_GOV_* globals; the verdict below is computed
+            # from those counters, so an empty search can no longer pass.
+            PV60_IMGPY="$RDTMP/pv60img.py"
+            cat > "$PV60_IMGPY" <<'PV60IMGEOF'
+          import struct, sys
+
+          def rd(p):
+              with open(p, 'rb') as f:
+                  return f.read()
+
+          def img_type(p):
+              with open(p, 'rb') as f:
+                  head = f.read(16384)
+              if head[:4] == b'\x3a\xff\x26\xed':
+                  return 'sparse'
+              if head[512:520] == b'EFI PART':
+                  return 'gpt'
+              if head[1080:1082] == b'\x53\xef':
+                  return 'ext4'
+              if head[1024:1028] == b'\xe2\xe1\xf5\xe0':
+                  return 'erofs'
+              if head[4096:4100] == b'\x67\x44\x6c\x61' and head[12288:12292] == b'\x30\x50\x4c\x41':
+                  return 'lp'
+              return 'unknown'
+
+          def gpt_entries(p):
+              with open(p, 'rb') as f:
+                  f.seek(512)
+                  hdr = f.read(92)
+                  if hdr[:8] != b'EFI PART':
+                      return []
+                  ent_lba, = struct.unpack_from('<Q', hdr, 72)
+                  nent, = struct.unpack_from('<I', hdr, 80)
+                  esz, = struct.unpack_from('<I', hdr, 84)
+                  f.seek(ent_lba * 512)
+                  out = []
+                  for _ in range(nent):
+                      e = f.read(esz)
+                      if len(e) < 56 or e[:16] == b'\x00' * 16:
+                          continue
+                      first, = struct.unpack_from('<Q', e, 32)
+                      last, = struct.unpack_from('<Q', e, 40)
+                      raw = e[56:128].decode('utf-16le', 'replace').rstrip('\x00')
+                      name = ''.join(c if (c.isalnum() or c in '._-') else '_' for c in raw) or 'part'
+                      out.append((name, first * 512, (last - first + 1) * 512))
+                  return out
+
+          def lp_entries(p):
+              with open(p, 'rb') as f:
+                  f.seek(4096)
+                  geo = f.read(52)
+                  if geo[:4] != b'\x67\x44\x6c\x61':
+                      return []
+                  f.seek(12288)
+                  hdr = f.read(128)
+                  if hdr[:4] != b'\x30\x50\x4c\x41':
+                      return []
+                  hsize, = struct.unpack_from('<I', hdr, 8)
+                  po, pn, ps = struct.unpack_from('<III', hdr, 80)
+                  eo, en, es = struct.unpack_from('<III', hdr, 92)
+                  base = 12288 + hsize
+                  f.seek(base + eo)
+                  exts = []
+                  for _ in range(en):
+                      e = f.read(es)
+                      ns, tt, td = struct.unpack_from('<QIQ', e, 0)
+                      exts.append((td * 512, ns * 512))
+                  f.seek(base + po)
+                  out = []
+                  for _ in range(pn):
+                      e = f.read(ps)
+                      name = e[:36].split(b'\x00')[0].decode('ascii', 'replace')
+                      name = ''.join(c if (c.isalnum() or c in '._-') else '_' for c in name) or 'part'
+                      fe, ne = struct.unpack_from('<II', e, 40)
+                      segs = [exts[j] for j in range(fe, fe + ne) if j < len(exts)]
+                      out.append((name, segs))
+                  return out
+
+          def carve(src, off, size, dst):
+              # Sparse-aware: all-zero chunks become holes, so carving a 4.3 GB
+              # super partition costs its real data, not its nominal size (the
+              # phase works in a mktemp dir; runner /tmp space is finite).
+              with open(src, 'rb') as f, open(dst, 'wb') as o:
+                  f.seek(off)
+                  left = size
+                  while left > 0:
+                      b = f.read(min(left, 8 * 1024 * 1024))
+                      if not b:
+                          break
+                      if b == b'\x00' * len(b):
+                          o.seek(len(b), 1)
+                      else:
+                          o.write(b)
+                      left -= len(b)
+                  o.truncate(size)
+
+          def putback(dst, off, src):
+              data = rd(src)
+              with open(dst, 'r+b') as f:
+                  f.seek(off)
+                  f.write(data)
+
+          def unsparse(src, dst):
+              data = rd(src)
+              if data[:4] != b'\x3a\xff\x26\xed':
+                  raise SystemExit('not a sparse image')
+              (_m, _maj, _min, fh, bh, total, nch) = struct.unpack_from('<IHHHHII', data, 0)
+              pos = 28
+              out = bytearray()
+              for _i in range(nch):
+                  ct, _r, cblks, tsz = struct.unpack_from('<HHII', data, pos)
+                  pos += 12
+                  if ct == 0xCAC1:
+                      out += data[pos:pos + cblks * bh]
+                      pos += cblks * bh
+                  elif ct == 0xCAC2:
+                      out += data[pos:pos + 4] * (cblks * bh // 4)
+                      pos += 4
+                  elif ct == 0xCAC3:
+                      out += b'\x00' * (cblks * bh)
+                  elif ct == 0xCAC4:
+                      pos += 4
+                  else:
+                      raise SystemExit('sparse chunk type %04x' % ct)
+              if len(out) != total * bh:
+                  raise SystemExit('sparse decode size mismatch')
+              with open(dst, 'wb') as f:
+                  f.write(out)
+
+          def resparse(src, dst, total):
+              data = rd(src)
+              bh = 4096
+              if len(data) != total * bh:
+                  raise SystemExit('resparse size mismatch')
+              chunks = []
+              pos = 0
+              while pos < len(data):
+                  blk = data[pos:pos + bh]
+                  if blk == b'\x00' * bh:
+                      chunks.append((0xCAC3, 1, 12))
+                      pos += bh
+                      continue
+                  fill = None
+                  v = blk[:4]
+                  if v * (bh // 4) == blk:
+                      fill = v
+                  if fill is not None:
+                      chunks.append((0xCAC2, 1, 16))
+                      chunks.append(('FILL', fill))
+                      pos += bh
+                      continue
+                  chunks.append((0xCAC1, 1, 12 + bh))
+                  chunks.append(('RAW', blk))
+                  pos += bh
+              hdr = struct.pack('<IHHHHII', 0xED26FF3A, 1, 0, 28, 12, total, len([c for c in chunks if c[0] != 'FILL' and c[0] != 'RAW']))
+              with open(dst, 'wb') as f:
+                  f.write(hdr)
+                  for c in chunks:
+                      if c[0] == 'FILL' or c[0] == 'RAW':
+                          f.write(c[1])
+                      else:
+                          f.write(struct.pack('<HHII', c[0], 0, c[1], c[2]))
+
+          def lz4split(src, outdir):
+              import os
+              data = rd(src)
+              if data[:4] != b'\x02\x21\x4c\x18':
+                  raise SystemExit('not an lz4 legacy stream')
+              frames = []
+              pos = 0
+              while pos < len(data):
+                  if data[pos:pos + 4] != b'\x02\x21\x4c\x18':
+                      raise SystemExit('lz4 frame %d: bad magic at %d' % (len(frames), pos))
+                  start = pos
+                  pos += 4
+                  while True:
+                      (size,) = struct.unpack_from('<I', data, pos)
+                      pos += 4
+                      if size == 0:
+                          break
+                      pos += size & 0x7FFFFFFF
+                  frames.append(data[start:pos])
+              for i, fr in enumerate(frames):
+                  with open(os.path.join(outdir, 'frame%d.lz4' % i), 'wb') as f:
+                      f.write(fr)
+              print(len(frames))
+
+          def main():
+              cmd = sys.argv[1]
+              if cmd == 'type':
+                  print(img_type(sys.argv[2]))
+              elif cmd == 'sparsedims':
+                  data = rd(sys.argv[2])
+                  (_m, _a, _b, fh, bh, total, _n) = struct.unpack_from('<IHHHHII', data, 0)
+                  print(total)
+              elif cmd == 'unsparse':
+                  unsparse(sys.argv[2], sys.argv[3])
+              elif cmd == 'resparse':
+                  resparse(sys.argv[2], sys.argv[3], int(sys.argv[4]))
+              elif cmd == 'gptlist':
+                  for (n, o, s) in gpt_entries(sys.argv[2]):
+                      print('%s\t%d\t%d' % (n, o, s))
+              elif cmd == 'lplist':
+                  for (n, segs) in lp_entries(sys.argv[2]):
+                      print('%s\t%s' % (n, ','.join('%d+%d' % sg for sg in segs)))
+              elif cmd == 'carve':
+                  carve(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), sys.argv[5])
+              elif cmd == 'carvesegs':
+                  segs = [tuple(int(x) for x in s.split('+')) for s in sys.argv[3].split(',') if s]
+                  with open(sys.argv[4], 'wb') as o:
+                      for (off, size) in segs:
+                          with open(sys.argv[2], 'rb') as f:
+                              f.seek(off)
+                              left = size
+                              while left > 0:
+                                  b = f.read(min(left, 8 * 1024 * 1024))
+                                  if not b:
+                                      break
+                                  if b == b'\x00' * len(b):
+                                      o.seek(len(b), 1)
+                                  else:
+                                      o.write(b)
+                                  left -= len(b)
+                      o.truncate(sum(s for (_o, s) in segs))
+              elif cmd == 'putbacksegs':
+                  segs = [tuple(int(x) for x in s.split('+')) for s in sys.argv[3].split(',') if s]
+                  data = rd(sys.argv[4])
+                  pos = 0
+                  with open(sys.argv[2], 'r+b') as f:
+                      for (off, size) in segs:
+                          f.seek(off)
+                          f.write(data[pos:pos + size])
+                          pos += size
+                  if pos != len(data):
+                      raise SystemExit('putbacksegs size mismatch')
+              elif cmd == 'putback':
+                  putback(sys.argv[2], int(sys.argv[3]), sys.argv[4])
+              elif cmd == 'lz4split':
+                  lz4split(sys.argv[2], sys.argv[3])
+              else:
+                  raise SystemExit('unknown subcommand ' + cmd)
+
+          main()
+          PV60IMGEOF
+            pv60_img_type() { python3 "$PV60_IMGPY" type "$1" 2>/dev/null || echo unknown; }
+            pv60_ext_list() {
+              # $1 = ext image file, $2 = output file (lines "f <path>" / "l <path>")
+              # Breadth-first debugfs walk over ls -p. Entry kind comes from the
+              # st_mode TYPE digits as printed by debugfs (dir 04, regular 10,
+              # symlink 12) - verified against the genuine vendor partition,
+              # whose regular files print e.g. /272/100644/0/0/fstab.ranchu/985/.
+              local IMG="$1" OUT="$2" D NEXT E MODE NM P
+              : > "$OUT"; local SEEN="$OUT.dirs"; : > "$SEEN"
+              echo "/" >> "$SEEN"
+              while IFS= read -r D; do
+                NEXT=""
+                while IFS= read -r E; do
+                  [ -z "$E" ] && continue
+                  MODE="$(printf '%s' "$E" | awk -F/ '{print $3}')"
+                  NM="$(printf '%s' "$E" | awk -F/ '{print $6}')"
+                  case "$NM" in ''|.|..) continue ;; esac
+                  case "$MODE" in
+                    04*) NEXT="$NEXT ${D%/}/$NM" ;;
+                    10*) echo "f ${D%/}/$NM" >> "$OUT" ;;
+                    12*) echo "l ${D%/}/$NM" >> "$OUT" ;;
+                  esac
+                done <<PV60DBGEOF
+          $(debugfs -R "ls -p $D" "$IMG" 2>/dev/null)
+          PV60DBGEOF
+                for P in $NEXT; do echo "$P" >> "$SEEN"; done
+              done < "$SEEN"
+            }
+            pv60_ext_patch_one() {
+              # $1 ext image, $2 in-image path, $3 display label.
+              local IMG="$1" P="$2" DISP="$3" ENT MODE UID_ GID_ HOSTF
+              ENT="$(debugfs -R "ls -p ${P%/*}/" "$IMG" 2>/dev/null | grep "/${P##*/}/" | head -1)"
+              if [ -z "$ENT" ]; then echo "posture: $DISP - stat lookup failed"; return 1; fi
+              MODE="$(printf '%s' "$ENT" | awk -F/ '{print $3}')"
+              UID_="$(printf '%s' "$ENT" | awk -F/ '{print $4}')"
+              GID_="$(printf '%s' "$ENT" | awk -F/ '{print $5}')"
+              HOSTF="$RDTMP/hostfstab.txt"
+              if ! debugfs -R "cat $P" "$IMG" > "$HOSTF" 2>/dev/null; then echo "posture: $DISP - debugfs cat failed"; return 1; fi
+              pv60_patch_file "$HOSTF" "$DISP" || return 1
+              if [ "$PV60_PF" = patched ]; then
+                debugfs -w -R "rm $P" "$IMG" >/dev/null 2>&1 || { echo "posture: $DISP - debugfs rm failed"; return 1; }
+                debugfs -w -R "write $HOSTF $P" "$IMG" >/dev/null 2>&1 || { echo "posture: $DISP - debugfs write failed"; return 1; }
+                debugfs -w -R "sif $P mode 0$MODE" "$IMG" >/dev/null 2>&1 || true
+                debugfs -w -R "sif $P uid $UID_" "$IMG" >/dev/null 2>&1 || true
+                debugfs -w -R "sif $P gid $GID_" "$IMG" >/dev/null 2>&1 || true
+                # re-read the patched copy from the image: flags must be gone
+                if debugfs -R "cat $P" "$IMG" 2>/dev/null | awk '$2=="/data"' | grep -qE 'fileencryption=|metadata_encryption=|keydirectory='; then
+                  echo "posture: $DISP - flags still present after in-image patch"; return 1
+                fi
+                echo "posture: $DISP re-read from image: FBE flags gone"
+              fi
+              return 0
+            }
+            pv60_component_ext() {
+              # $1 = ext image file, $2 = component label
+              local IMG="$1" LBL="$2" LIST KIND P REL
+              LIST="$RDTMP/list-$(echo "$LBL" | tr '/:.' '___').txt"
+              pv60_ext_list "$IMG" "$LIST"
+              echo "posture: $LBL walk: $(grep -c '^f ' "$LIST" 2>/dev/null || echo 0) files, $(grep -c '^l ' "$LIST" 2>/dev/null || echo 0) symlinks"
+              while IFS= read -r REL; do
+                [ -z "$REL" ] && continue
+                KIND="${REL%% *}"; P="${REL#* }"
+                case "${P##*/}" in fstab*) : ;; *) continue ;; esac
+                if [ "$KIND" = l ]; then echo "POSTURE: NOT APPLIED - $LBL:$P is a symlink fstab (unresolvable target)"; exit 1; fi
+                echo "posture: candidate $LBL:$P"
+                pv60_ext_patch_one "$IMG" "$P" "$LBL:$P" || { echo "POSTURE: NOT APPLIED - patch failed for $LBL:$P"; exit 1; }
+                pv60_count "$LBL:$P"
+              done < "$LIST"
+            }
+            pv60_component_mount() {
+              # $1 = image file, $2 = label, $3 = type (erofs/unknown/...).
+              # Guarded sudo loop-mount fallback, the r4 vendor pattern
+              # generalised. Prefer a read-write mount (patch in place); a
+              # read-only mount enumerates, and a governing copy that carries
+              # flags but cannot be written FAILS CLOSED - it is never counted
+              # as clean, so the verdict cannot pass over it.
+              local IMG="$1" LBL="$2" T="$3" MNT F REL WR
+              MNT="$RDTMP/mnt-$(echo "$LBL" | tr '/:.' '___')"
+              mkdir -p "$MNT"
+              WR=0
+              if sudo -n mount -o loop,rw "$IMG" "$MNT" 2>/dev/null; then
+                WR=1; echo "posture: $LBL ($T) loop-mounted read-write via sudo"
+              elif sudo -n mount -o loop,ro "$IMG" "$MNT" 2>/dev/null; then
+                echo "posture: $LBL ($T) loop-mounted read-only via sudo (enumeration only)"
+              else
+                echo "posture: $LBL ($T) cannot be enumerated unprivileged (no debugfs path for this fs, no passwordless sudo mount) - if a governing fstab lived only here the verdict counters will show it as missing"
+                return 0
+              fi
+              find "$MNT" -name 'fstab*' 2>/dev/null | sort > "$RDTMP/mount-cand.txt"
+              if [ ! -s "$RDTMP/mount-cand.txt" ]; then echo "posture: $LBL - no fstab* found (mounted walk)"; fi
+              while IFS= read -r F; do
+                [ -z "$F" ] && continue
+                REL="${F#$MNT}"
+                echo "posture: candidate $LBL:$REL"
+                pv60_patch_file "$F" "$LBL:$REL" || { echo "POSTURE: NOT APPLIED - patch computation failed for $LBL:$REL"; exit 1; }
+                if [ "$PV60_PF" = patched ] && [ "$WR" != 1 ]; then
+                  echo "POSTURE: NOT APPLIED - governing fstab $LBL:$REL carries FBE flags but its component mounted read-only"
+                  exit 1
+                fi
+                pv60_count "$LBL:$REL"
+              done < "$RDTMP/mount-cand.txt"
+              sudo -n umount "$MNT" 2>/dev/null || umount "$MNT" 2>/dev/null || true
+            }
+            pv60_component() {
+              # $1 = image file, $2 = component label. Recursive container walk:
+              # sparse -> GPT -> LP -> ext4/erofs/unknown leaf handling.
+              local F="$1" LBL="$2" T RAW TOTAL BEFORE_P LIST NAME OFF SIZE SEGS PART
+              T="$(pv60_img_type "$F")"
+              echo "posture: component $LBL type=$T size=$(stat -c%s "$F" 2>/dev/null || echo '?')"
+              case "$T" in
+                sparse)
+                  RAW="$F.raw"
+                  TOTAL="$(python3 "$PV60_IMGPY" sparsedims "$F" 2>/dev/null || echo 0)"
+                  if [ -z "$TOTAL" ] || [ "$TOTAL" = 0 ]; then echo "POSTURE: NOT APPLIED - sparse header unreadable for $LBL"; exit 1; fi
+                  python3 "$PV60_IMGPY" unsparse "$F" "$RAW" || { echo "POSTURE: NOT APPLIED - sparse decode failed for $LBL"; exit 1; }
+                  BEFORE_P=$PV60_GOV_PATCHED
+                  pv60_component "$RAW" "$LBL"
+                  if [ "$PV60_GOV_PATCHED" -gt "$BEFORE_P" ]; then
+                    python3 "$PV60_IMGPY" resparse "$RAW" "$F" "$TOTAL" || { echo "POSTURE: NOT APPLIED - sparse re-encode failed for $LBL"; exit 1; }
+                    echo "posture: $LBL sparse re-encoded with patched contents"
+                  else
+                    echo "posture: $LBL sparse container unchanged (nothing patched inside)"
+                  fi
+                  rm -f "$RAW" ;;
+                gpt)
+                  LIST="$RDTMP/gpt-$(echo "$LBL" | tr '/:.' '___').txt"
+                  python3 "$PV60_IMGPY" gptlist "$F" > "$LIST" 2>/dev/null || { echo "POSTURE: NOT APPLIED - GPT parse failed for $LBL"; exit 1; }
+                  if [ ! -s "$LIST" ]; then echo "POSTURE: NOT APPLIED - GPT in $LBL has no partitions"; exit 1; fi
+                  while IFS="$(printf '\t')" read -r NAME OFF SIZE; do
+                    [ -z "$NAME" ] && continue
+                    PART="$RDTMP/part-$(echo "$LBL-$NAME" | tr '/:.' '___').img"
+                    python3 "$PV60_IMGPY" carve "$F" "$OFF" "$SIZE" "$PART" || { echo "POSTURE: NOT APPLIED - GPT carve failed for $LBL:$NAME"; exit 1; }
+                    BEFORE_P=$PV60_GOV_PATCHED
+                    pv60_component "$PART" "$LBL:$NAME"
+                    if [ "$PV60_GOV_PATCHED" -gt "$BEFORE_P" ]; then
+                      python3 "$PV60_IMGPY" putback "$F" "$OFF" "$PART" || { echo "POSTURE: NOT APPLIED - GPT putback failed for $LBL:$NAME"; exit 1; }
+                      echo "posture: $LBL:$NAME patched partition written back at offset $OFF"
+                    fi
+                    rm -f "$PART"
+                  done < "$LIST" ;;
+                lp)
+                  LIST="$RDTMP/lp-$(echo "$LBL" | tr '/:.' '___').txt"
+                  python3 "$PV60_IMGPY" lplist "$F" > "$LIST" 2>/dev/null || { echo "POSTURE: NOT APPLIED - LP parse failed for $LBL"; exit 1; }
+                  if [ ! -s "$LIST" ]; then echo "POSTURE: NOT APPLIED - LP container $LBL has no logical partitions"; exit 1; fi
+                  while IFS="$(printf '\t')" read -r NAME SEGS; do
+                    [ -z "$NAME" ] && continue
+                    PART="$RDTMP/part-$(echo "$LBL-$NAME" | tr '/:.' '___').img"
+                    python3 "$PV60_IMGPY" carvesegs "$F" "$SEGS" "$PART" || { echo "POSTURE: NOT APPLIED - LP carve failed for $LBL:$NAME"; exit 1; }
+                    BEFORE_P=$PV60_GOV_PATCHED
+                    pv60_component "$PART" "$LBL:$NAME"
+                    if [ "$PV60_GOV_PATCHED" -gt "$BEFORE_P" ]; then
+                      python3 "$PV60_IMGPY" putbacksegs "$F" "$SEGS" "$PART" || { echo "POSTURE: NOT APPLIED - LP putback failed for $LBL:$NAME"; exit 1; }
+                      echo "posture: $LBL:$NAME patched logical partition written back"
+                    fi
+                    rm -f "$PART"
+                  done < "$LIST" ;;
+                ext4) pv60_component_ext "$F" "$LBL" ;;
+                *) pv60_component_mount "$F" "$LBL" "$T" ;;
+              esac
+            }
+            for PV60_IMG in vendor.img system.img; do
+              if [ -s "$PV60_SYSROOT/$PV60_IMG" ]; then
+                pv60_component "$PV60_SYSROOT/$PV60_IMG" "$PV60_IMG"
+              else
+                echo "posture: $PV60_IMG absent in the system image dir - skipped"
+              fi
+            done
+          if [ -n "$PV60_FAIL" ]; then
+            echo "POSTURE: NOT APPLIED - $PV60_FAIL (the run aborts here by design: a half-patched posture would test nothing)"
+            exit 1
+          fi
+          echo "posture: governing fstab accounting: found=$PV60_GOV_FOUND (patched=$PV60_GOV_PATCHED, already flag-free=$PV60_GOV_CLEAN); governing copies: ${PV60_GOV_PATHS:-none}"
+          if [ "$PV60_GOV_FOUND" = "0" ]; then
+            echo "POSTURE: NOT APPLIED - no governing fstab copy found in any image component"
+            exit 1
+          fi
+          echo "PV_POSTURE=fstab-unencrypted-v1" >> "$GITHUB_ENV"
+          echo "POSTURE: APPLIED - $PV60_GOV_PATCHED of $PV60_GOV_FOUND governing fstab copies patched (patched copies: ${PV60_PATCHED_PATHS:-none}; all governing copies: $PV60_GOV_PATHS); every governing /data line was re-read from its image component and verified flag-free after patching; the first /data format under this image is plaintext. Guest-side proof is the POSTURE CHECK line in wake part 2 (ro.crypto.state) plus the DATA_PERSIST grade."
+          { echo "posture_phase=fstab-strip-v1"; echo "posture_sysroot=$PV60_SYSROOT"; } >> "$EVID/02-avd.txt" 2>/dev/null || true
+          PV60POSTUREEOF
+          echo "posture library written: $PV60_LIB ($(wc -l < "$PV60_LIB") lines, sha256 $(sha256sum "$PV60_LIB" | awk '{print $1}'))"
+          if [ "$MODE" = "birth" ]; then
+            echo "posture: mode=birth - every production birth under this workflow is a posture birth, so the phase is applied to this run's images NOW, after AVD creation and before any boot (fail-closed exactly as proven in the v60 test lineage: a machinery failure aborts the job rather than sealing a phone whose certificate would lie about its posture)"
+            . "$PV60_LIB"
+          else
+            echo "posture: mode=$MODE - the phase is NOT executed in this step. mode=wake executes the identical library in wake part 1, before the wake boot, iff the restored pack's certificate carries userdata_posture=fstab-unencrypted-v1; every other mode is posture-inert and boots exactly the images v5.9 booted."
+          fi
       - name: PhoneVault step 3 of 15 - restore fetch, pinned + certificate-verified (v3.8)
         shell: bash
         env:
@@ -2439,6 +3479,9 @@ jobs:
 
       - name: PhoneVault step 13 of 15 - production birth (v4.0, birth mode only)
         shell: bash
+        env:
+          PV_HF_TOKEN: ${{ secrets.PV_HF_TOKEN }}
+          PV_ADOPT_ID: ${{ inputs.adopt_capsule }}
         run: |
           set +e
           EVID=.pv-evidence
@@ -2594,6 +3637,10 @@ jobs:
               echo "phone=${PV_PHONE_ID:-one}"; echo "route=$PV40_ROUTE"; echo "identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)"
               echo "capsule_sha256=$PV40_CAPSHA"; echo "settings_secure_md5_birth=$PV40_MD5"
               echo "datapersist_sentinel=${PV40_SENTINEL:-absent}"
+              echo "userdata_posture=${PV_POSTURE:-unpatched}"
+              echo "capsule_accounts=${PV40_ACCT:-absent}"
+              echo "adopted_capsule=${PV40_ADOPT:-no}"
+              echo "adopted_android_id=${PV40_ADOPT_ID:-}"
               echo "largest_userdata_file=$LARGEST"; echo "largest_userdata_size_bytes=$LARGEST_SIZE"; echo "largest_userdata_sha256=$SHA"
               for f in $LIST; do printf 'packed_file: %s %s bytes\n' "$f" "$(stat -c %s "$AVDDIR/$f")"; done
               echo "packed_file: phonevault-version.txt (this file)"
@@ -2705,8 +3752,80 @@ jobs:
               $A settings put system system_locales en-US 2>&1
               echo "PHONE VERIFY US SETTINGS: tz=$($A getprop persist.sys.timezone 2>/dev/null | tr -d '\r') locales=$($A settings get system system_locales 2>/dev/null | tr -d '\r')"
             fi
+                      ADOPT_FAIL=""
+                      if [ -n "${PV_ADOPT_ID:-}" ] && [ "$CAP_OK" = "1" ]; then
+                        echo "-- ADOPT_CAPSULE (v6.0): this birth adopts the EXISTING identity capsule of this phone's lineage (expected android_id $PV_ADOPT_ID) from its production vault $PV_VAULT_REPO. The old phone's /data does NOT migrate (its encryption keys are gone - nothing at the disk level crosses); the identity crosses through the capsule, the channel built for exactly this. What adoption does NOT carry, stated plainly: the ai89 enrolment (it lived in the old /data) and the GSF ID (fresh GMS checkin on the new phone) - both are re-established by the follow-on gate --"
+                        ADOPT_DIR="pv-adopt"; rm -rf "$ADOPT_DIR"; mkdir -p "$ADOPT_DIR"
+                        if [ -z "${PV_HF_TOKEN:-}" ]; then ADOPT_FAIL="PV_HF_TOKEN is not available to the birth step"; fi
+                        if [ -z "$ADOPT_FAIL" ]; then
+                          python3 -c "import huggingface_hub" 2>/dev/null || python3 -m pip install --quiet huggingface_hub >/dev/null 2>&1
+                          python3 - "$ADOPT_DIR" > pv-adopt-fetch.log 2>&1 <<'PVPYEOF'
+          import hashlib,json,os,sys
+          from huggingface_hub import hf_hub_download
+          dl,repo,tok=sys.argv[1],os.environ["PV_VAULT_REPO"],os.environ["PV_HF_TOKEN"]
+          p=json.loads(open(hf_hub_download(repo,"CURRENT.json",repo_type="dataset",token=tok)).read())
+          assert p.get("transport")=="raw-v5.4", "not a v5.4 raw pointer"
+          f=hf_hub_download(repo,p["prefix"]+"/phonevault-state.tar",repo_type="dataset",token=tok,local_dir=dl+"-vault")
+          h=hashlib.sha256(); b=open(f,"rb")
+          for x in iter(lambda: b.read(1<<22),b""): h.update(x)
+          assert h.hexdigest()==p["pack_sha256"], "vault pack sha mismatch"
+          os.replace(f,dl+"/phonevault-state.tar"); print("VAULT FETCH OK prefix="+p["prefix"])
+          PVPYEOF
+                          ADOPT_RC=$?; cat pv-adopt-fetch.log
+                          if [ "$ADOPT_RC" != "0" ] || [ ! -s "$ADOPT_DIR/phonevault-state.tar" ]; then ADOPT_FAIL="vault fetch of the lineage's CURRENT pack failed (rc=$ADOPT_RC)"; fi
+                        fi
+                        if [ -z "$ADOPT_FAIL" ]; then
+                          tar -xf "$ADOPT_DIR/phonevault-state.tar" -C "$ADOPT_DIR" phonevault-version.txt pv-capsule.tar capsule-manifest.txt 2>/dev/null
+                          if [ ! -s "$ADOPT_DIR/pv-capsule.tar" ] || [ ! -s "$ADOPT_DIR/capsule-manifest.txt" ] || [ ! -s "$ADOPT_DIR/phonevault-version.txt" ]; then ADOPT_FAIL="the fetched pack does not contain phonevault-version.txt + pv-capsule.tar + capsule-manifest.txt"; fi
+                        fi
+                        ACERT_ID=""; AMAN_ID=""; ACERT_SHA=""; AMAN_TOKEN=""; AMAN_PATH=""; AMAN_MD5=""; ASHA=""; AMD5_NOW=""
+                        if [ -z "$ADOPT_FAIL" ]; then
+                          ACERT_ID="$(sed -n 's/^android_id=//p' "$ADOPT_DIR/phonevault-version.txt" | tr -d '\r' | head -1)"
+                          ACERT_SHA="$(sed -n 's/^capsule_sha256=//p' "$ADOPT_DIR/phonevault-version.txt" | tr -d '\r' | head -1)"
+                          AMAN_ID="$(sed -n 's/^android_id=//p' "$ADOPT_DIR/capsule-manifest.txt" | tr -d '\r' | head -1)"
+                          AMAN_TOKEN="$(sed -n 's/^marker_token=//p' "$ADOPT_DIR/capsule-manifest.txt" | tr -d '\r' | head -1)"
+                          AMAN_PATH="$(sed -n 's/^marker_guest_path=//p' "$ADOPT_DIR/capsule-manifest.txt" | tr -d '\r' | head -1)"
+                          AMAN_MD5="$(sed -n 's/^settings_secure_md5_birth=//p' "$ADOPT_DIR/capsule-manifest.txt" | tr -d '\r' | head -1)"
+                          ASHA="$(sha256sum "$ADOPT_DIR/pv-capsule.tar" | awk '{print $1}')"
+                          echo "adopt checks: fetched pack certificate android_id=$ACERT_ID, capsule manifest android_id=$AMAN_ID, expected (adopt_capsule input)=$PV_ADOPT_ID; sha256(fetched pv-capsule.tar)=$ASHA vs the fetched pack's certificate capsule_sha256=$ACERT_SHA"
+                          if [ "$ACERT_ID" != "$PV_ADOPT_ID" ] || [ "$AMAN_ID" != "$PV_ADOPT_ID" ]; then ADOPT_FAIL="identity mismatch - the vault CURRENT pack is not the expected lineage (certificate=$ACERT_ID manifest=$AMAN_ID expected=$PV_ADOPT_ID)"; fi
+                          if [ -z "$ACERT_SHA" ] || [ "$ASHA" != "$ACERT_SHA" ]; then ADOPT_FAIL="capsule integrity mismatch - the fetched capsule does not hash to its own pack's certificate"; fi
+                          if [ -z "$AMAN_TOKEN" ] || [ -z "$AMAN_PATH" ]; then ADOPT_FAIL="the adopted capsule's manifest lacks marker_token or marker_guest_path"; fi
+                        fi
+                        if [ -z "$ADOPT_FAIL" ]; then
+                          adb -s emulator-5554 push "$ADOPT_DIR/pv-capsule.tar" /data/local/tmp/pv-capsule-restore.tar 2>&1; echo "adopt_capsule_push_rc=$?"
+                          adb -s emulator-5554 shell "tar -xf /data/local/tmp/pv-capsule-restore.tar -C /" 2>&1; echo "adopt_capsule_extract_rc=$?"
+                          AMARKER_NOW="$(adb -s emulator-5554 shell cat "$AMAN_PATH" 2>/dev/null | tr -d '\r')"
+                          echo "adopted marker readback at $AMAN_PATH: '$AMARKER_NOW' (manifest token: $AMAN_TOKEN)"
+                          if [ "$AMARKER_NOW" != "$AMAN_TOKEN" ]; then ADOPT_FAIL="the adopted marker does not read back after the capsule apply"; fi
+                        fi
+                        if [ -z "$ADOPT_FAIL" ]; then
+                          adb -s emulator-5554 shell settings put secure android_id "$PV_ADOPT_ID" 2>&1; echo "adopt_settings_put_rc=$? (android_id applied LAST, per the capsule discipline)"
+                          AID_NOW="$(adb -s emulator-5554 shell settings get secure android_id 2>/dev/null | tr -d '\r')"
+                          AMD5_NOW="$(adb -s emulator-5554 shell md5sum /data/system/users/0/settings_secure.xml 2>/dev/null | awk '{print $1}' | tr -d '\r')"
+                          echo "adopt readbacks: guest android_id=$AID_NOW (expected $PV_ADOPT_ID); guest settings_secure.xml md5=$AMD5_NOW (the adopted manifest recorded $AMAN_MD5)"
+                          if [ "$AID_NOW" != "$PV_ADOPT_ID" ]; then ADOPT_FAIL="the guest does not read the adopted android_id after the apply"; fi
+                          if [ -n "$AMAN_MD5" ] && [ "$AMD5_NOW" != "$AMAN_MD5" ]; then ADOPT_FAIL="the guest's settings_secure.xml md5 does not match the adopted capsule's recorded birth md5"; fi
+                        fi
+                        if [ -z "$ADOPT_FAIL" ]; then
+                          cp "$ADOPT_DIR/pv-capsule.tar" "$CAPDIR/pv-capsule.tar"
+                          cp "$ADOPT_DIR/capsule-manifest.txt" "$CAPDIR/capsule-manifest.txt"
+                          CAPSHA="$ASHA"; CAP_ID="$PV_ADOPT_ID"; RT4_TOKEN="$AMAN_TOKEN"; RT4_MPATH="$AMAN_PATH"; CAP_MD5_BIRTH="$AMD5_NOW"
+                          PV40_ADOPT=yes; PV40_ADOPT_ID="$PV_ADOPT_ID"
+                          echo "ADOPT: COMPLETE - the guest reads android_id $CAP_ID with the adopted marker, and the adopted capsule (capsule_sha256=$CAPSHA) replaces the just-captured one in the pack this birth seals; the new chain starts at session 1 in the same production vault and the old packs remain in the dataset as evidence"
+                        else
+                          echo "ADOPT: FAILED - $ADOPT_FAIL; this birth will NOT pack (a failed adoption is never sealed)"
+                          echo "BIRTH: NOT EVALUATED - adopt_capsule failed: $ADOPT_FAIL" >> "$BVERD"
+                        fi
+                      elif [ -n "${PV_ADOPT_ID:-}" ]; then
+                        ADOPT_FAIL="adopt_capsule was requested but the fresh identity capsule capture failed (CAP_OK=$CAP_OK) - there is no sealed birth capsule state to adopt into"
+                        echo "ADOPT: FAILED - $ADOPT_FAIL"
+                        echo "BIRTH: NOT EVALUATED - adopt_capsule failed: $ADOPT_FAIL" >> "$BVERD"
+                      fi
                       rt4_stop
-                      if [ "$CAP_OK" != "1" ]; then
+                      if [ -n "$ADOPT_FAIL" ]; then
+                        echo "BIRTH: NOT RUN (adopt_capsule failed - see the ADOPT lines above; a failed adoption is never sealed)"
+                      elif [ "$CAP_OK" != "1" ]; then
                         echo "BIRTH: NOT RUN (capsule capture failed - root could not tar the chosen paths)"
                         echo "BIRTH: NOT RUN (identity capsule capture failed)" >> "$BVERD"
                       elif [ "$RT4_GRACEFUL" != "1" ]; then
@@ -2717,6 +3836,7 @@ jobs:
                         cp "$CAPDIR/capsule-manifest.txt" "$AVDDIR/capsule-manifest.txt"
                         PV40_ID="$CAP_ID"; PV40_TOKEN="$RT4_TOKEN"; PV40_MOK=1; PV40_MPATH="$RT4_MPATH"
                         PV40_CAPSHA="$CAPSHA"; PV40_MD5="$CAP_MD5_BIRTH"; PV40_SESSION=1; PV40_ROUTE="birth-v4.0"
+                        if [ "${PV40_ADOPT:-no}" = "yes" ]; then PV40_ROUTE="birth-v6.0-adopt"; fi
                         pv40_pack phonevault-state.tar
                         if [ "$PV40_PACK_OK" != "1" ]; then
                           echo "BIRTH: FAILED - the phone was born (android_id $CAP_ID, marker verified) but the production pack failed (pack tar/seal failed); NOTHING was uploaded - re-dispatch birth"
@@ -2745,6 +3865,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PV_HF_TOKEN: ${{ secrets.PV_HF_TOKEN }}
+          PV_REPO: ${{ github.repository }}
+          PV_PIN: ${{ inputs.pin_run_id }}
         run: |
           set +e
           EVID=.pv-evidence
@@ -2848,7 +3970,7 @@ jobs:
             if [ "$MODE" != "wake" ] || [ "$PV_SKIP_W" = "1" ]; then
               if [ "$PV_SKIP_W" = "1" ]; then echo "wake part 1 SKIPPED - WAKE NOT EVALUATED (disk) sealed by the v3.9 guard above"; else echo "mode=$MODE - production wake not applicable (wake mode only; every other mode keeps its v3.9 behaviour)"; fi
             else
-              PIN="${{ inputs.pin_run_id }}"
+              PIN="$PV_PIN"
               echo "pin_run_id_input=${PIN:-<none>}"
               echo "wake rule (poisoned-shelf lesson, run No.9): NEVER newest-blind - pin_run_id names the birth run or the newest GOOD wake run; the pack is accepted only when its OWN certificate passes the gates below BEFORE extraction or boot."
               PIN_OK=1
@@ -2881,11 +4003,11 @@ jobs:
                 if [ "$PVF_OK" = "1" ]; then echo "-- v5.4: pack fetched from the HF vault - artifact download skipped --"; else echo "-- download artifact $PV_ART_NAME from pinned run $PIN --"; gh run download "$PIN" --name "$PV_ART_NAME" --dir "$DLDIR" 2>&1 | tail -2; fi
                 if [ ! -f "$DLDIR/phonevault-state.tar" ]; then
                   echo "-- gh run download produced no tar; fallback: artifacts API, filtered to the pinned run --"
-                  gh api "repos/${{ github.repository }}/actions/artifacts?name=$PV_ART_NAME&per_page=100" > pv-wake-arts.json 2>pv-wake-arts.err; echo "artifacts_api_rc=$?"
+                  gh api "repos/$PV_REPO/actions/artifacts?name=$PV_ART_NAME&per_page=100" > pv-wake-arts.json 2>pv-wake-arts.err; echo "artifacts_api_rc=$?"
                   WAKE_AID="$(python3 -c 'import sys,json; pin=sys.argv[1]; d=json.load(open("pv-wake-arts.json")); live=[a for a in d.get("artifacts",[]) if not a.get("expired") and str((a.get("workflow_run") or {}).get("id"))==pin]; live.sort(key=lambda a: a.get("created_at") or "", reverse=True); print(live[0].get("id") if live else "")' "$PIN" 2>/dev/null)"
                   echo "artifacts_api_candidate_id=${WAKE_AID:-<none>}"
                   if [ -n "$WAKE_AID" ]; then
-                    if gh api "repos/${{ github.repository }}/actions/artifacts/$WAKE_AID/zip" > "$DLDIR/phonevault-state.zip" 2>pv-wake-dl.err && [ -s "$DLDIR/phonevault-state.zip" ]; then
+                    if gh api "repos/$PV_REPO/actions/artifacts/$WAKE_AID/zip" > "$DLDIR/phonevault-state.zip" 2>pv-wake-dl.err && [ -s "$DLDIR/phonevault-state.zip" ]; then
                       if command -v unzip >/dev/null 2>&1; then unzip -o "$DLDIR/phonevault-state.zip" -d "$DLDIR" >/dev/null 2>&1; else python3 -c "import zipfile; zipfile.ZipFile('$DLDIR/phonevault-state.zip').extractall('$DLDIR')" 2>&1; fi
                     else echo "artifact zip download failed:"; cat pv-wake-dl.err 2>&1; fi
                   fi
@@ -2913,6 +4035,8 @@ jobs:
                     CBORN="$(sed -n 's/^born_utc=//p' "$CERT" | tr -d '\r' | head -1)"
                     CSES="$(sed -n 's/^session=//p' "$CERT" | tr -d '\r' | head -1)"
                     CSENT="$(sed -n 's/^datapersist_sentinel=//p' "$CERT" | tr -d '\r' | head -1)"
+                    CPOST="$(sed -n 's/^userdata_posture=//p' "$CERT" | tr -d '\r' | head -1)"
+                    CACCT="$(sed -n 's/^capsule_accounts=//p' "$CERT" | tr -d '\r' | head -1)"
                     CLF="$(sed -n 's/^largest_userdata_file=//p' "$CERT" | tr -d '\r' | head -1)"
                     CLS="$(sed -n 's/^largest_userdata_sha256=//p' "$CERT" | tr -d '\r' | head -1)"
                     case "$CSES" in ''|*[!0-9]*) CSES=1;; esac
@@ -2939,6 +4063,24 @@ jobs:
                       echo "WAKE: NOT EVALUATED - certificate gate failed before boot" >> "$WVERD"
                     else
                       echo "certificate gate PASSED: android_id=$CID marker_ok=1 capsule + disk integrity match the certificate"
+                      echo "-- V60 PRODUCTION POSTURE RULE: this run's images are patched iff the restored pack's certificate carries userdata_posture=fstab-unencrypted-v1 (lineage value read from the certificate: '${CPOST:-<absent>}'). A plaintext-born /data must never boot under an encrypted fstab and an FBE-born /data never under a stripped one; a lineage with no such certificate line (Phone One, Phone Two, pre-v6.0 Verify) boots the untouched images and this wake behaves exactly as v5.9 --"
+                      if [ "$CPOST" = "fstab-unencrypted-v1" ]; then
+                        PV60_LIB="${RUNNER_TEMP:-/tmp}/pv60-posture.sh"
+                        if [ ! -s "$PV60_LIB" ]; then
+                          echo "POSTURE: NOT APPLIED - the posture library is missing at $PV60_LIB (the AVD-creation step of this job did not materialise it); a patched lineage must never boot unpatched, so this wake stops before extraction and boot"
+                          echo "WAKE: NOT EVALUATED - posture library missing on a patched lineage" >> "$WVERD"
+                          cp "$WVERD" "$EVID/identity-verdict.txt"; mkdir -p .pv-evidence-final; cp "$EVID/identity-verdict.txt" .pv-evidence-final/ 2>/dev/null; exit 1
+                        fi
+                        ( . "$PV60_LIB" ); PV60_RC=$?
+                        if [ "$PV60_RC" != "0" ]; then
+                          echo "POSTURE: NOT APPLIED - the posture phase failed on a patched lineage (rc=$PV60_RC; the phase's own lines above name the failure); the wake does NOT boot - booting this pack under an unpatched fstab would re-initialise its /data"
+                          echo "WAKE: NOT EVALUATED - posture phase failed on a patched lineage" >> "$WVERD"
+                          cp "$WVERD" "$EVID/identity-verdict.txt"; mkdir -p .pv-evidence-final; cp "$EVID/identity-verdict.txt" .pv-evidence-final/ 2>/dev/null; exit 1
+                        fi
+                        echo "posture: the lineage patch is applied and verified for this run (the phase's POSTURE: APPLIED line above); the extraction and wake boot below use the patched images"
+                      else
+                        echo "POSTURE: SKIPPED - the restored pack's lineage is unpatched (userdata_posture='${CPOST:-<absent>}'); images untouched - this wake behaves exactly as v5.9"
+                      fi
                       echo "-- process gate: a leftover qemu-system is cleared and verified gone first --"
                       if pgrep -f 'qemu-system' >/dev/null 2>&1; then echo "leftover qemu-system at wake start: $(pgrep -af 'qemu-system' 2>/dev/null)"; rt4_kill_hung; fi
                       if pgrep -f 'qemu-system' >/dev/null 2>&1; then
@@ -2974,6 +4116,19 @@ jobs:
                               echo "-- apply the capsule as root (BEFORE identity is read for the verdict): push the capsule tar FROM THE PACK, extract at /, then settings put LAST so the settings provider's own write is the final word --"
                               adb -s emulator-5554 push "$AVDDIR/pv-capsule.tar" /data/local/tmp/pv-capsule-restore.tar 2>&1; echo "capsule_push_rc=$?"
                               adb -s emulator-5554 shell "tar -xf /data/local/tmp/pv-capsule-restore.tar -C /" 2>&1; echo "capsule_extract_rc=$?"
+                              CAPLIST_R7="$(tar -tf "$AVDDIR/pv-capsule.tar" 2>/dev/null)"
+                              if printf '%s\n' "$CAPLIST_R7" | grep -qx 'data/system_de/0/accounts_de.db'; then
+                                echo "-- v6.0 apply hygiene (the placed capsule carries account state): SELinux contexts for the placed account files (the capsule tar records no contexts) + removal of stale -wal/-shm/-journal siblings boot 1 created next to its fresh account DBs, for any sibling the capsule itself does not carry (a stale journal must never be replayed over the placed DBs) --"
+                                for R7P in data/system_de/0/accounts_de.db data/system_ce/0/accounts_ce.db; do
+                                  for R7S in -wal -shm -journal; do
+                                    if ! printf '%s\n' "$CAPLIST_R7" | grep -qx "$R7P$R7S"; then adb -s emulator-5554 shell "rm -f /$R7P$R7S" 2>&1; fi
+                                  done
+                                done
+                                adb -s emulator-5554 shell "restorecon /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db /data/system/sync/accounts.xml 2>/dev/null; timeout 120 restorecon -R /data/data/com.google.android.gsf /data/data/com.google.android.gms 2>/dev/null; echo prod_restorecon_done" 2>&1
+                                adb -s emulator-5554 shell "ls -lZ /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db /data/system/sync/accounts.xml" 2>&1
+                              else
+                                echo "apply hygiene: the placed capsule carries no account state (identity-only capsule) - no account files were placed and no guest file is touched; v5.9 behaviour"
+                              fi
                               adb -s emulator-5554 shell settings put secure android_id "$CID" 2>&1; echo "settings_put_rc=$?"
                               POST_ID="$(adb -s emulator-5554 shell settings get secure android_id 2>/dev/null | tr -d '\r')"
                               POST_MARKER="$(adb -s emulator-5554 shell cat "$CMPATH" 2>/dev/null | tr -d '\r')"
@@ -2990,6 +4145,8 @@ jobs:
                                 echo "CBORN=$CBORN"
                                 echo "CSES=$CSES"
                                 echo "CSENT=$CSENT"
+                                echo "CPOST=$CPOST"
+                                echo "CACCT=$CACCT"
                                 echo "PRE_ID=$PRE_ID"
                                 echo "POST_ID=$POST_ID"
                                 echo "POST_MARKER=$POST_MARKER"
@@ -3237,6 +4394,8 @@ jobs:
           echo "live + egress evidence merged into .pv-evidence-final"
       - name: PhoneVault step 15 of 15 - production wake part 2 - second reboot + verdict + re-pack + app side-load (v4.3, wake mode only)
         shell: bash
+        env:
+          PV_APPS: ${{ inputs.install_apps }}
         run: |
           set +e
           EVID=.pv-evidence
@@ -3329,6 +4488,8 @@ jobs:
               echo "phone=${PV_PHONE_ID:-one}"; echo "route=$PV40_ROUTE"; echo "identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)"
               echo "capsule_sha256=$PV40_CAPSHA"; echo "settings_secure_md5_birth=$PV40_MD5"
               echo "datapersist_sentinel=${PV40_SENTINEL:-absent}"
+              echo "userdata_posture=${PV_POSTURE:-unpatched}"
+              echo "capsule_accounts=${PV40_ACCT:-absent}"
               echo "largest_userdata_file=$LARGEST"; echo "largest_userdata_size_bytes=$LARGEST_SIZE"; echo "largest_userdata_sha256=$SHA"
               for f in $LIST; do printf 'packed_file: %s %s bytes\n' "$f" "$(stat -c %s "$AVDDIR/$f")"; done
               echo "packed_file: phonevault-version.txt (this file)"
@@ -3377,6 +4538,10 @@ jobs:
               CBORN="$(sed -n 's/^CBORN=//p' "$WSTATE" | tr -d '\r' | head -1)"
               CSES="$(sed -n 's/^CSES=//p' "$WSTATE" | tr -d '\r' | head -1)"
               CSENT="$(sed -n 's/^CSENT=//p' "$WSTATE" | tr -d '\r' | head -1)"
+              CPOST="$(sed -n 's/^CPOST=//p' "$WSTATE" | tr -d '\r' | head -1)"
+              CACCT="$(sed -n 's/^CACCT=//p' "$WSTATE" | tr -d '\r' | head -1)"
+              PV_POSTURE=unpatched; if [ "$CPOST" = "fstab-unencrypted-v1" ]; then PV_POSTURE=fstab-unencrypted-v1; fi
+              echo "lineage posture carried into the outgoing certificate: userdata_posture=$PV_POSTURE (read from the restored pack's certificate via part 1; the outgoing pack must seal the SAME value or the next wake would patch-or-skip on a lie)"
               PRE_ID="$(sed -n 's/^PRE_ID=//p' "$WSTATE" | tr -d '\r' | head -1)"
               POST_ID="$(sed -n 's/^POST_ID=//p' "$WSTATE" | tr -d '\r' | head -1)"
               POST_MARKER="$(sed -n 's/^POST_MARKER=//p' "$WSTATE" | tr -d '\r' | head -1)"
@@ -3396,9 +4561,21 @@ jobs:
               fi
               echo "$DP_LINE"
               echo "$DP_LINE" >> "$WVERD"
+              echo "-- V60 PRODUCTION POSTURE CHECK + ACCOUNT STATE: the guest's crypto state, its governing fstab /data line, and the account list AMS serves - all read after capsule apply + the survival reboot, before any app install in this run --"
+              echo "POSTURE CHECK (guest): ro.crypto.state=$(adb -s emulator-5554 shell getprop ro.crypto.state 2>/dev/null | tr -d '\r') ro.crypto.type=$(adb -s emulator-5554 shell getprop ro.crypto.type 2>/dev/null | tr -d '\r')"
+              echo "POSTURE CHECK (guest): vendor fstab /data line: $(adb -s emulator-5554 shell cat /vendor/etc/fstab.* 2>/dev/null | awk '$2=="/data"' | tr -d '\r')"
+              DUMPACC="$(adb -s emulator-5554 shell dumpsys account 2>/dev/null | tr -d '\r')"
+              printf '%s\n' "$DUMPACC" | grep -F 'Account {' | head -20
+              NACC="$(printf '%s\n' "$DUMPACC" | grep -cF 'Account {')"
+              case "$NACC" in ''|*[!0-9]*) NACC=0;; esac
+              if [ "$CACCT" = "planted" ]; then
+                if [ "$NACC" -ge 1 ]; then echo "ACCOUNT_STATE: $NACC account(s) listed by AMS after capsule apply + reboot 2 - consistent with the restored pack's capsule_accounts=planted expectation"; else echo "ACCOUNT_STATE: WARNING - the restored pack sealed capsule_accounts=planted but AMS lists 0 accounts after capsule apply + reboot 2: account state did NOT survive this wake (the account phase below re-captures whatever this guest actually holds; read this together with the follow-on gate, never as an identity verdict)"; fi
+              else
+                echo "ACCOUNT_STATE: $NACC account(s) listed by AMS after capsule apply + reboot 2 (no expectation carried - the restored pack's capsule_accounts is not planted)"
+              fi
               echo "-- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --"
               APPSTAT="$EVID/prod-app-status.txt"; : > "$APPSTAT"
-              PV_APPS="${{ inputs.install_apps }}"
+              # PV_APPS is supplied by this step's env block (inputs.install_apps), hoisted out of this script on purpose: GitHub counts the WHOLE string toward the 21000-char expression limit when a string contains an expression, and this run block is larger than that limit on its own.
               APPS_DIR=""; APP_FIRST_PKG=""; APP_INSTALLED_LIST=""
               for cand in phonevault/apps apps; do if [ -f "$cand/apps.txt" ]; then APPS_DIR="$cand"; break; fi; done
               if [ "$PV_APPS" = "no" ]; then
@@ -3473,6 +4650,245 @@ jobs:
                   echo "sentinel readback: '$SENTBACK'"
                   case "$SENTBACK" in *"session=$SENTNEXT"*) PV40_SENTINEL=planted; echo "sentinel planted for session $SENTNEXT (the outgoing pack's certificate will carry datapersist_sentinel=planted)";; *) echo "sentinel plant UNVERIFIED - the outgoing certificate will carry datapersist_sentinel=absent and the next wake will grade UNGRADED, not NO";; esac
                 fi
+                if [ -z "$W_FAIL" ]; then
+                  echo "-- V60 PRODUCTION ACCOUNT PHASE (FINAL, job #8): re-capture the EXTENDED identity capsule (identity files + accounts_de.db + accounts_ce.db as an atomic pair + sync/accounts.xml + the whole GSF dir + the whole GMS dir; the keystore is NOT carried - CAPSULE-ACCOUNT-DESIGN.md section 6) on EVERY successful wake, because GMS refreshes authtokens during the live window - a birth-frozen capsule would seal stale tokens. The mechanism this production form carries was proven live on the v60-test lineage (grading wake 43602751221: the account sealed into the capsule was listed by AMS after capsule apply + reboot 2). Three proven pieces, folded in by the r8-r11 deltas: (1) CAPTURE = the r9 adb-root-pull primitive with a host paircheck gate (this step inherits NO root state - adbd root from wake part 1 does not survive reboot 2 - so root is re-established and verified uid=0 in-step before any account read; the earlier snapshot/stop capture designs were removed after failing live and are NOT in this phase); (2) ASSEMBLY = the r11 MERGE construction - the extended capsule is built on top of the phone's incoming capsule, never from a fresh staging tree, with the r10 guest source facts printed at assembly and the GSF/GMS dirs staged by the guest root tar; (3) CHECK = the full table in its STRICT production form: every expected item printed with present/absent AND origin, ALL missing required items collected and named at once, and NO documented-absence exception - on an enrolled production guest sync/accounts.xml, the GSF dir, gservices.db and the GMS dir are all definitionally present, so an absent source is itself a seal failure. Any failure keeps the previous capsule byte-unchanged and seals capsule_accounts=absent - never a false plant; planted seals only for a verified capture holding >= 1 real account --"
+                  ACCTD="pv-acct"; rm -rf "$ACCTD"; mkdir -p "$ACCTD"
+                  ACCT_FAIL=""; NEWCAPSHA=""; ACCT_NDE=""; ACCT_PRIM=""; ACCT_ATTEMPT=0
+                  echo "-- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 test phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --"
+                  adb -s emulator-5554 root 2>&1; echo "adb_root_rc=$?"
+                  ACCT_ROOTED=""
+                  for i in 1 2 3 4 5 6; do
+                    IDOUT="$(adb -s emulator-5554 shell id 2>/dev/null | tr -d '\r')"
+                    echo "account capture root poll $i: id='$IDOUT'"
+                    case "$IDOUT" in *uid=0*) ACCT_ROOTED=1; break;; esac
+                    sleep 5
+                  done
+                  if [ "$ACCT_ROOTED" = "1" ]; then echo "ACCOUNT CAPTURE: adb root verified (uid=0 shell in this step)"; else ACCT_FAIL="adb root did not yield a uid=0 shell in this step - the adb-root pull cannot run; failing closed (previous capsule kept, capsule_accounts=absent)"; fi
+                  echo "keystore probe (facts for the keystore question; the keystore is NOT carried by this capsule):"
+                  adb -s emulator-5554 shell "ls /data/misc/keystore 2>&1; ls /data/misc/keystore/user_0 2>/dev/null | head -8" 2>&1 | head -14
+                  echo "gms/gsf guest sizes:"; adb -s emulator-5554 shell "du -sm /data/data/com.google.android.gms /data/data/com.google.android.gsf" 2>&1
+                  adb -s emulator-5554 shell "stat -c '%n %u %g %a' /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db /data/system/sync/accounts.xml; ls -lZ /data/system_de/0/accounts_de.db /data/system_ce/0/accounts_ce.db" > "$ACCTD/orig-stat.txt" 2>&1; cat "$ACCTD/orig-stat.txt"
+                  cat > pv60-acctverify.py <<'PV60ACCVEOF'
+          import sqlite3, sys
+
+          def open_ro(path):
+              return sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+
+          def accounts(con):
+              return con.execute(
+                  "SELECT _id, name, type FROM accounts ORDER BY _id").fetchall()
+
+          try:
+              de = open_ro(sys.argv[1])
+              ce = open_ro(sys.argv[2])
+              ok = True
+              for label, con in (("de", de), ("ce", ce)):
+                  ic = [r[0] for r in con.execute("PRAGMA integrity_check")]
+                  print("PVACC integrity %s: %s" % (label, ic[0] if ic else "<none>"))
+                  if ic != ["ok"]:
+                      ok = False
+              drows = accounts(de)
+              crows = accounts(ce)
+              print("PVACC de accounts: %d ce accounts: %d" % (len(drows), len(crows)))
+              for rid, name, typ in drows:
+                  print("PVACC account id=%s name=%s type=%s" % (rid, name, typ))
+              if [tuple(r) for r in drows] != [tuple(r) for r in crows]:
+                  ok = False
+                  print("PVACC de/ce account rows DIFFER (the pair is atomic - a "
+                        "one-sided state is destroyed by AMS at first unlock, so a "
+                        "mismatched pair is not sealed as planted)")
+              print("PVACC_RESULT: %s" % ("VERIFY_OK" if ok else "VERIFY_FAIL"))
+              sys.exit(0 if ok else 3)
+          except Exception as e:
+              print("PVACC_RESULT: VERIFY_FAIL error: %r" % (e,))
+              sys.exit(3)
+          PV60ACCVEOF
+                  echo "-- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). No framework stop and no guest-side snapshot open exist anywhere in this phase. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present) and /data/system/sync/accounts.xml when present; the GSF/GMS whole dirs enter at assembly below via a guest root tar of the source paths (a plain tree pull does not preserve uid/gid/mode; the root tar does - the identity capsule's own tree method). The host paircheck (the production verifier above: sqlite integrity_check on both files + DE/CE (id,name,type) identity) is the gate - a torn or inconsistent pull fails the check and is re-pulled, never sealed; consistency is checked, not assumed from a quiesce. Capture runs on an idle, settled guest (post-verdict, no enrolment in flight in this step) --"
+                  while [ -z "$ACCT_FAIL" ] && [ -z "$ACCT_PRIM" ] && [ "$ACCT_ATTEMPT" -lt 3 ]; do
+                    ACCT_ATTEMPT=$((ACCT_ATTEMPT+1))
+                    PULLD="$ACCTD/pull"; rm -rf "$PULLD"; mkdir -p "$PULLD"
+                    echo "-- adb-root pull attempt $ACCT_ATTEMPT of 3 --"
+                    adb -s emulator-5554 pull /data/system_de/0/accounts_de.db "$PULLD/accounts_de.db" 2>&1
+                    adb -s emulator-5554 pull /data/system_ce/0/accounts_ce.db "$PULLD/accounts_ce.db" 2>&1
+                    for R9S in -wal -shm; do
+                      if adb -s emulator-5554 shell "ls /data/system_de/0/accounts_de.db$R9S" >/dev/null 2>&1; then adb -s emulator-5554 pull "/data/system_de/0/accounts_de.db$R9S" "$PULLD/accounts_de.db$R9S" 2>&1; fi
+                      if adb -s emulator-5554 shell "ls /data/system_ce/0/accounts_ce.db$R9S" >/dev/null 2>&1; then adb -s emulator-5554 pull "/data/system_ce/0/accounts_ce.db$R9S" "$PULLD/accounts_ce.db$R9S" 2>&1; fi
+                    done
+                    ACCT_SYNC="absent"
+                    if adb -s emulator-5554 shell "ls /data/system/sync/accounts.xml" >/dev/null 2>&1; then adb -s emulator-5554 pull /data/system/sync/accounts.xml "$PULLD/accounts.xml" 2>&1; if [ -s "$PULLD/accounts.xml" ]; then ACCT_SYNC="present"; fi; else echo "sync/accounts.xml: absent on this guest at capture (the strict table below treats this as a seal failure on an enrolled production guest)"; fi
+                    if [ ! -s "$PULLD/accounts_de.db" ] || [ ! -s "$PULLD/accounts_ce.db" ]; then
+                      echo "ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt $ACCT_ATTEMPT, paircheck FAIL - pull incomplete: a required DB is missing or empty)"
+                    else
+                      python3 pv60-acctverify.py "$PULLD/accounts_de.db" "$PULLD/accounts_ce.db" > "$ACCTD/paircheck-attempt$ACCT_ATTEMPT.log" 2>&1; PRC=$?
+                      cat "$ACCTD/paircheck-attempt$ACCT_ATTEMPT.log"
+                      if [ "$PRC" = "0" ]; then
+                        echo "ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt $ACCT_ATTEMPT, paircheck OK - integrity ok on both DBs, DE/CE (id,name,type) rows identical)"
+                        cp "$PULLD/accounts_de.db" "$ACCTD/accounts_de.db"; cp "$PULLD/accounts_ce.db" "$ACCTD/accounts_ce.db"
+                        for R9S in -wal -shm; do if [ -f "$PULLD/accounts_de.db$R9S" ]; then cp "$PULLD/accounts_de.db$R9S" "$ACCTD/accounts_de.db$R9S"; fi; if [ -f "$PULLD/accounts_ce.db$R9S" ]; then cp "$PULLD/accounts_ce.db$R9S" "$ACCTD/accounts_ce.db$R9S"; fi; done
+                        if [ "$ACCT_SYNC" = "present" ]; then cp "$PULLD/accounts.xml" "$ACCTD/accounts.xml"; fi
+                        ACCT_NDE="$(sed -n 's/^PVACC de accounts: \([0-9][0-9]*\) .*/\1/p' "$ACCTD/paircheck-attempt$ACCT_ATTEMPT.log" | head -1)"
+                        ACCT_PRIM="adb-root-pull"
+                      else
+                        echo "ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt $ACCT_ATTEMPT, paircheck FAIL rc=$PRC - torn or inconsistent pair; re-pulling)"
+                      fi
+                    fi
+                    if [ -z "$ACCT_PRIM" ] && [ "$ACCT_ATTEMPT" -lt 3 ]; then sleep 5; fi
+                  done
+                  if [ -z "$ACCT_FAIL" ] && [ -z "$ACCT_PRIM" ]; then ACCT_FAIL="adb-root-pull capture did not verify on any of 3 attempts (per-attempt paircheck verdicts printed above) - failing closed"; fi
+                  if [ -n "$ACCT_PRIM" ]; then echo "ACCOUNT CAPTURE: verified via $ACCT_PRIM on attempt $ACCT_ATTEMPT (the DB copies in $ACCTD passed host paircheck; $ACCT_NDE account(s) in the captured DBs; sync/accounts.xml: $ACCT_SYNC)"; fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    echo "-- capture normalisation (production-only refinement, design section 16): fold any -wal content of the pulled host copies into the main DB files and drop the journal siblings, so the copies the assembly stages are standalone-complete. On the test lineage this fold happened inside the plant tool; production has no plant, so it happens here, on the verified copies, before assembly. Without it, a main-file-only overlay could strand un-checkpointed account rows in a journal that does not ride the capsule --"
+                    cat > pv60-acctnorm.py <<'PV60ACCNEOF'
+          import sqlite3, sys
+
+          rc = 0
+          for path in sys.argv[1:]:
+              try:
+                  con = sqlite3.connect(path)
+                  jm = con.execute("PRAGMA journal_mode=DELETE").fetchone()
+                  ic = [r[0] for r in con.execute("PRAGMA integrity_check")]
+                  print("PVACCNORM %s journal_mode=%s integrity=%s"
+                        % (path, jm[0] if jm else "<none>", ic[0] if ic else "<none>"))
+                  con.close()
+                  if ic != ["ok"]:
+                      rc = 3
+              except Exception as e:
+                  print("PVACCNORM %s error: %r" % (path, e))
+                  rc = 3
+          sys.exit(rc)
+          PV60ACCNEOF
+                    python3 pv60-acctnorm.py "$ACCTD/accounts_de.db" "$ACCTD/accounts_ce.db" > "$ACCTD/normalize.log" 2>&1; NRC=$?
+                    cat "$ACCTD/normalize.log"
+                    if [ "$NRC" != "0" ]; then ACCT_FAIL="capture normalisation failed rc=$NRC (journal fold or post-fold integrity - log above)"; fi
+                    rm -f "$ACCTD/accounts_de.db-wal" "$ACCTD/accounts_de.db-shm" "$ACCTD/accounts_ce.db-wal" "$ACCTD/accounts_ce.db-shm"
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    DEUID="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; DEGID="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; DEMODE="$(grep 'accounts_de.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
+                    CEUID="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; CEGID="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; CEMODE="$(grep 'accounts_ce.db ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
+                    if ! printf '%s' "$DEUID$DEGID$DEMODE$CEUID$CEGID$CEMODE" | grep -qx '[0-9][0-9]*'; then ACCT_FAIL="original ownership/mode not parseable from the stat capture"; fi
+                    SYUID="$(grep 'accounts.xml ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $2}')"; SYGID="$(grep 'accounts.xml ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $3}')"; SYMODE="$(grep 'accounts.xml ' "$ACCTD/orig-stat.txt" | head -1 | awk '{print $4}')"
+                    if [ -z "$ACCT_FAIL" ] && [ "$ACCT_SYNC" = "present" ] && ! printf '%s' "$SYUID$SYGID$SYMODE" | grep -qx '[0-9][0-9]*'; then ACCT_FAIL="sync/accounts.xml ownership/mode not parseable from the stat capture"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    echo "-- capsule assembly (r11 MERGE construction, production form): the extended capsule is assembled ON TOP OF THE INCOMING CAPSULE, not rebuilt from a fresh staging tree. The incoming capsule is $AVDDIR/pv-capsule.tar on this host: wake part 1 extracted the verified pinned pack into the hand-made AVD folder, gate-verified this file's sha256 against the certificate's capsule_sha256 BEFORE boot, and pushed it from exactly this path for the capsule apply - so at this point in the wake it is still the incoming capsule (this phase overwrites it only on the success path below), and its extracted form IS retained; no re-extraction from the pack is needed. The phase pushes it to the guest and extracts it as root into the staging tree FIRST (the tar records uid/gid/mode; the root extract restores them), so settings_secure.xml + the marker are present BY CONSTRUCTION. Overlays then land on that base by path: the paircheck-verified DB copies (staging paths only, canonical recorded uid/gid/mode - they never touch the canonical DB paths in this design), sync/accounts.xml when captured, and the GSF/GMS whole dirs via the guest root tar. On later wakes the merge base is the previous wake's EXTENDED capsule, so the overlay refreshes the account set by path while identity and previously carried files persist by construction - exactly the permanence semantics the role needs. The copy is live; the DB pair - the sealed content - is the paircheck-verified pull --"
+                    INCCAP="$AVDDIR/pv-capsule.tar"
+                    if [ ! -s "$INCCAP" ]; then ACCT_FAIL="incoming capsule $INCCAP missing or empty at assembly - the merge has no base (wake part 1 restores the verified pack into $AVDDIR and nothing writes this file before this phase; failing closed, previous capsule state untouched)"; fi
+                    if [ -z "$ACCT_FAIL" ]; then
+                      CAPIN_SHA="$(sha256sum "$INCCAP" | awk '{print $1}')"
+                      CAPLISTIN="$(tar -tf "$INCCAP" 2>&1)"
+                      echo "ACCOUNT ASSEMBLY INCOMING CAPSULE: $INCCAP sha256=$CAPIN_SHA (gate-verified against the certificate in wake part 1; this listing is the merge base and the origin evidence for the identity rows of the strict table):"
+                      printf '%s\n' "$CAPLISTIN"
+                      adb -s emulator-5554 push "$INCCAP" /data/local/tmp/pv-incoming-capsule.tar 2>&1; echo "incoming_capsule_push_rc=$?"
+                    fi
+                    if [ -z "$ACCT_FAIL" ]; then
+                      STG="/data/local/tmp/pv-capstage"
+                      echo "-- account assembly source facts (r10, guest ls as root):"
+                      adb -s emulator-5554 shell "ls -ld /data/data/com.google.android.gsf /data/data/com.google.android.gms; du -sm /data/data/com.google.android.gsf /data/data/com.google.android.gms" 2>&1
+                      GSF_SRC="absent"; GMS_SRC="absent"
+                      if adb -s emulator-5554 shell "test -d /data/data/com.google.android.gsf" >/dev/null 2>&1; then GSF_SRC="present"; fi
+                      if adb -s emulator-5554 shell "test -d /data/data/com.google.android.gms" >/dev/null 2>&1; then GMS_SRC="present"; fi
+                      echo "ACCOUNT ASSEMBLY SOURCE FACT: gsf=$GSF_SRC gms=$GMS_SRC (guest /data/data dirs as root; production strict form: on an enrolled guest BOTH dirs are required - a source fact of absent is itself a seal failure, collected by the strict table below)"
+                      adb -s emulator-5554 shell "rm -rf $STG /data/local/tmp/pv-capsule.tar /data/local/tmp/pv-dirs.tar; mkdir -p $STG; tar -xf /data/local/tmp/pv-incoming-capsule.tar -C $STG; echo pv_base_extract_rc=\$?; ls -l $STG/data/system/users/0/settings_secure.xml $STG/data/local/tmp/phonevault-marker.txt; mkdir -p $STG/data/system_de/0 $STG/data/system_ce/0 $STG/data/system/sync $STG/data/data" 2>&1
+                      adb -s emulator-5554 push "$ACCTD/accounts_de.db" "$STG/data/system_de/0/accounts_de.db" 2>&1
+                      adb -s emulator-5554 push "$ACCTD/accounts_ce.db" "$STG/data/system_ce/0/accounts_ce.db" 2>&1
+                      adb -s emulator-5554 shell "chown $DEUID:$DEGID $STG/data/system_de/0/accounts_de.db; chmod $DEMODE $STG/data/system_de/0/accounts_de.db; chown $CEUID:$CEGID $STG/data/system_ce/0/accounts_ce.db; chmod $CEMODE $STG/data/system_ce/0/accounts_ce.db; ls -lZ $STG/data/system_de/0/accounts_de.db $STG/data/system_ce/0/accounts_ce.db" 2>&1
+                      DIRSARGS=""; if [ "$GSF_SRC" = "present" ]; then DIRSARGS="$DIRSARGS data/data/com.google.android.gsf"; fi; if [ "$GMS_SRC" = "present" ]; then DIRSARGS="$DIRSARGS data/data/com.google.android.gms"; fi
+                      if [ -n "$DIRSARGS" ]; then
+                        echo "-- account assembly dirs tar (r10): guest root tar of the present source dirs, extracted into the staging tree ON TOP OF the capsule base (the tar records uid/gid/mode; the root extract restores them; an explicitly named source dir yields at least its directory entry, so a present-but-empty dir still lands in the staging tree and in the capsule tar) --"
+                        adb -s emulator-5554 shell "tar -cf /data/local/tmp/pv-dirs.tar -C / $DIRSARGS; echo pv_dirs_tar_rc=\$?; ls -l /data/local/tmp/pv-dirs.tar; tar -xf /data/local/tmp/pv-dirs.tar -C $STG; echo pv_dirs_extract_rc=\$?" 2>&1
+                      else
+                        echo "ACCOUNT ASSEMBLY: both GSF and GMS source dirs are ABSENT on this guest - no dirs tar to stage (production strict form: this is a seal failure on an enrolled guest - the strict table below collects it)"
+                      fi
+                      echo "-- account assembly staged result:"; adb -s emulator-5554 shell "ls $STG/data/data; du -sm $STG/data/data/com.google.android.gsf $STG/data/data/com.google.android.gms" 2>&1
+                      if [ "$ACCT_SYNC" = "present" ]; then adb -s emulator-5554 push "$ACCTD/accounts.xml" "$STG/data/system/sync/accounts.xml" 2>&1; adb -s emulator-5554 shell "chown $SYUID:$SYGID $STG/data/system/sync/accounts.xml; chmod $SYMODE $STG/data/system/sync/accounts.xml" 2>&1; fi
+                      adb -s emulator-5554 shell "tar -cf /data/local/tmp/pv-capsule.tar -C $STG data" 2>&1; echo "extended_capsule_tar_rc=$?"
+                      rm -rf pv-capsule-acct; mkdir -p pv-capsule-acct
+                      adb -s emulator-5554 pull /data/local/tmp/pv-capsule.tar pv-capsule-acct/pv-capsule.tar 2>&1
+                      if [ ! -s pv-capsule-acct/pv-capsule.tar ]; then ACCT_FAIL="extended capsule pull failed or empty"; fi
+                    fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    rm -rf "$ACCTD/verify"; mkdir -p "$ACCTD/verify"
+                    tar -xf pv-capsule-acct/pv-capsule.tar -C "$ACCTD/verify" data/system_de/0 data/system_ce/0 2>&1
+                    python3 pv60-acctverify.py "$ACCTD/verify/data/system_de/0/accounts_de.db" "$ACCTD/verify/data/system_ce/0/accounts_ce.db" > "$ACCTD/verify.log" 2>&1; VRC=$?
+                    cat "$ACCTD/verify.log"
+                    if [ "$VRC" != "0" ]; then ACCT_FAIL="host verification of the captured capsule failed rc=$VRC (integrity or DE/CE pair mismatch - log above)"; fi
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    echo "-- capsule manifest: written BEFORE the strict full-table check so the table can carry the manifest row; its identity values are the incoming capsule's own (CID/CTOKEN/CMPATH/CMD5 were read by wake part 1 from the pinned pack's certificate, whose capsule_sha256 gate-verified the merge base above) --"
+                    NEWCAPSHA="$(sha256sum pv-capsule-acct/pv-capsule.tar | awk '{print $1}')"
+                    {
+                      echo "capsule_format=phonevault-identity-capsule-v3"
+                      echo "android_id=$CID"
+                      echo "marker_token=$CTOKEN"
+                      echo "marker_guest_path=$CMPATH"
+                      echo "capsule_sha256=$NEWCAPSHA"
+                      echo "settings_secure_md5_birth=$CMD5"
+                      echo "capsule_accounts=planted"
+                      echo "capsule_files=settings_secure.xml + marker (carried from the incoming capsule by the merge) + accounts_de.db + accounts_ce.db + sync/accounts.xml + gsf dir + gms dir (v6.0 production FINAL extended capsule: merge base = incoming capsule, adb-root-pull capture with host paircheck, guest-root-tar dir staging, strict full-table check)"
+                    } > pv-capsule-acct/capsule-manifest.txt
+                    echo "ACCOUNT PHASE: outgoing manifest written (capsule_sha256=$NEWCAPSHA)"
+                  fi
+                  if [ -z "$ACCT_FAIL" ]; then
+                    CAPLISTF="$(tar -tf pv-capsule-acct/pv-capsule.tar 2>&1)"
+                    echo "-- account capsule listings used by the strict table: the INCOMING listing (merge base) was printed at assembly; the MERGED listing follows (head -30):"
+                    printf '%s\n' "$CAPLISTF" | head -30
+                    echo "merged capsule listing: $(printf '%s\n' "$CAPLISTF" | wc -l) entries in total"
+                    CAPMANIFEST="pv-capsule-acct/capsule-manifest.txt"
+                    # PROD TABLE BEGIN - the STRICT full-table completeness check, kept between these markers: the production fixture extracts this block from the built workflow and exercises it against fixture merges. Inputs: CAPLISTF (merged tar listing), CAPLISTIN (incoming tar listing), CAPMANIFEST (outgoing manifest path), ACCT_SYNC, GSF_SRC, GMS_SRC, ACCT_FAIL. Semantics (design sections 15 + 16): EVERY expected item is printed with present/absent AND origin; identity rows must appear in BOTH listings (their origin is proven, not asserted); there are NO conditional rows and NO exceptions in production - sync/accounts.xml, the GSF entries, gservices.db and the GMS entries are required unconditionally, and a documented guest absence of any of them is itself a seal failure (PROD-R10-DELTA section 2); ALL missing required items are collected and named in ONE verdict + ONE ACCT_FAIL.
+                    PROD_MISSING=""
+                    for PRODID in "settings_secure.xml data/system/users/0/settings_secure.xml" "phonevault-marker.txt data/local/tmp/phonevault-marker.txt"; do
+                      PRODLBL="${PRODID%% *}"; PRODPAT="${PRODID#* }"; PRODIN=0; PRODMG=0
+                      if printf '%s\n' "$CAPLISTIN" | grep -qx "$PRODPAT"; then PRODIN=1; fi
+                      if printf '%s\n' "$CAPLISTF" | grep -qx "$PRODPAT"; then PRODMG=1; fi
+                      if [ "$PRODIN" = "1" ] && [ "$PRODMG" = "1" ]; then echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | PRESENT | origin: incoming-capsule"; else echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | MISSING (in incoming listing: $PRODIN, in merged listing: $PRODMG) | origin: incoming-capsule"; PROD_MISSING="$PROD_MISSING $PRODLBL"; fi
+                    done
+                    for PRODDB in "accounts_de.db data/system_de/0/accounts_de.db" "accounts_ce.db data/system_ce/0/accounts_ce.db"; do
+                      PRODLBL="${PRODDB%% *}"; PRODPAT="${PRODDB#* }"
+                      if printf '%s\n' "$CAPLISTF" | grep -qx "$PRODPAT"; then echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: $PRODLBL | $PRODPAT | MISSING | origin: phase-staged"; PROD_MISSING="$PROD_MISSING $PRODLBL"; fi
+                    done
+                    if [ -s "$CAPMANIFEST" ]; then echo "ACCOUNT CAPSULE TABLE: capsule-manifest.txt | $CAPMANIFEST (outgoing, beside the capsule tar) | PRESENT | origin: phase-staged (identity values carried from the incoming capsule)"; else echo "ACCOUNT CAPSULE TABLE: capsule-manifest.txt | $CAPMANIFEST (outgoing, beside the capsule tar) | MISSING | origin: phase-staged"; PROD_MISSING="$PROD_MISSING capsule-manifest.txt"; fi
+                    if [ "$ACCT_SYNC" = "present" ]; then
+                      if printf '%s\n' "$CAPLISTF" | grep -qx 'data/system/sync/accounts.xml'; then echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (present at capture - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING sync/accounts.xml"; fi
+                    else
+                      echo "ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (absent at capture - on an enrolled production guest the sync state is part of the required account set; seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING sync/accounts.xml"
+                    fi
+                    if [ "$GSF_SRC" = "present" ]; then
+                      if printf '%s\n' "$CAPLISTF" | grep -q 'data/data/com.google.android.gsf/'; then echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | MISSING (source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gsf-entries"; fi
+                      if printf '%s\n' "$CAPLISTF" | grep -q 'databases/gservices.db'; then echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | MISSING (GSF source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gservices.db"; fi
+                    else
+                      echo "ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | MISSING (GSF source dir ABSENT on an enrolled production guest - seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gsf-entries"
+                      echo "ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | MISSING (GSF source dir ABSENT on an enrolled production guest - seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gservices.db"
+                    fi
+                    if [ "$GMS_SRC" = "present" ]; then
+                      if printf '%s\n' "$CAPLISTF" | grep -q 'data/data/com.google.android.gms/'; then echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | PRESENT | origin: phase-staged"; else echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | MISSING (source dir present on the guest - staging loss) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gms-entries"; fi
+                    else
+                      echo "ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | MISSING (GMS source dir ABSENT on an enrolled production guest - seal failure) | origin: phase-staged"; PROD_MISSING="$PROD_MISSING gms-entries"
+                    fi
+                    if [ -n "$PROD_MISSING" ]; then
+                      echo "ACCOUNT CAPSULE TABLE VERDICT: INCOMPLETE - missing required item(s):$PROD_MISSING"
+                      if [ -z "$ACCT_FAIL" ]; then ACCT_FAIL="extended capsule merge incomplete - missing required item(s):$PROD_MISSING (the full table above lists every item at once; previous capsule kept, capsule_accounts=absent)"; fi
+                    else
+                      echo "ACCOUNT CAPSULE TABLE VERDICT: COMPLETE - every required item present (production strict form: every row is required, no exceptions)"
+                    fi
+                    # PROD TABLE END
+                  fi
+                  if [ -z "$ACCT_FAIL" ] && [ -n "$ACCT_NDE" ] && [ "$ACCT_NDE" -ge 1 ] 2>/dev/null; then
+                    cp pv-capsule-acct/pv-capsule.tar "$AVDDIR/pv-capsule.tar"
+                    cp pv-capsule-acct/capsule-manifest.txt "$AVDDIR/capsule-manifest.txt"
+                    PV40_ACCT=planted
+                    echo "ACCOUNT PHASE: extended capsule MERGED from the incoming capsule (identity present by construction; strict full table COMPLETE) and host-verified ($ACCT_NDE account(s) in the sealed DBs, DE/CE pair identical, integrity ok; capture primitive: adb-root-pull) - the outgoing pack carries capsule_accounts=planted and capsule_sha256=$NEWCAPSHA"
+                  elif [ -z "$ACCT_FAIL" ]; then
+                    echo "ACCOUNT PHASE: the captured capsule verified clean but holds 0 accounts (de count '${ACCT_NDE:-unparsed}') - nothing to carry: the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent"
+                  else
+                    echo "ACCOUNT PHASE: FAILED - $ACCT_FAIL; the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent"
+                  fi
+                  echo "framework was never stopped in this run (capture primitive: adb-root-pull - no quiesce exists in this design) - no restart to perform or prove"
+                  DUMPCTL="$(adb -s emulator-5554 shell dumpsys account 2>/dev/null | tr -d '\r')"
+                  printf '%s\n' "$DUMPCTL" | grep -F 'Account {' | head -20
+                  NCTL="$(printf '%s\n' "$DUMPCTL" | grep -cF 'Account {')"; case "$NCTL" in ''|*[!0-9]*) NCTL=0;; esac
+                  echo "ACCOUNT CAPTURE CONTROL: $NCTL account(s) listed by AMS in this run after the re-capture (the live guest's account state was not disturbed by the capture)"
+                fi
                 rt4_stop
                 if [ -n "$W_FAIL" ]; then
                   echo "WAKE: FAILED - $W_FAIL (certificate $CID, control-pre-apply $PRE_ID, post-apply $POST_ID, after-reboot2 $FINAL_ID; NO re-pack - the pinned pack stays the newest good state)"
@@ -3483,6 +4899,7 @@ jobs:
                 else
                   PV40_ID="$CID"; PV40_TOKEN="$CTOKEN"; PV40_MOK=1; PV40_MPATH="$CMPATH"
                   PV40_CAPSHA="$CCAPSHA"; PV40_MD5="$CMD5"; PV40_SESSION=$((CSES + 1)); PV40_BORN="$CBORN"; PV40_ROUTE="wake-v4.0"
+                  if [ -n "$NEWCAPSHA" ]; then PV40_CAPSHA="$NEWCAPSHA"; echo "pack certificate capsule_sha256 updated to the v6.0 re-captured capsule: $NEWCAPSHA"; fi
                   pv40_pack phonevault-state.tar
                   if [ "$PV40_PACK_OK" != "1" ]; then
                     echo "WAKE: SAME PHONE (identity proven as above) BUT RE-PACK FAILED (pack tar/seal failed); the shelf was NOT advanced - the pinned pack remains the newest good state"
