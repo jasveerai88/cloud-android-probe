@@ -4961,7 +4961,7 @@ jobs:
                 else
                   PV40_ID="$CID"; PV40_TOKEN="$CTOKEN"; PV40_MOK=1; PV40_MPATH="$CMPATH"
                   PV40_CAPSHA="$CCAPSHA"; PV40_MD5="$CMD5"; PV40_SESSION=$((CSES + 1)); PV40_BORN="$CBORN"; PV40_ROUTE="wake-v4.0"
-                  if [ -n "$NEWCAPSHA" ]; then PV40_CAPSHA="$NEWCAPSHA"; echo "pack certificate capsule_sha256 updated to the v6.0 re-captured capsule: $NEWCAPSHA"; fi
+                  if [ -n "$NEWCAPSHA" ] && [ "$(sha256sum "$AVDDIR/pv-capsule.tar" 2>/dev/null | awk '{print $1}')" = "$NEWCAPSHA" ]; then PV40_CAPSHA="$NEWCAPSHA"; echo "pack certificate capsule_sha256 updated to the v6.0 re-captured capsule: $NEWCAPSHA"; fi
                   pv40_pack phonevault-state.tar
                   if [ "$PV40_PACK_OK" != "1" ]; then
                     echo "WAKE: SAME PHONE (identity proven as above) BUT RE-PACK FAILED (pack tar/seal failed); the shelf was NOT advanced - the pinned pack remains the newest good state"
