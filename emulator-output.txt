@@ -1,5 +1,5 @@
-DATA_PERSIST: UNGRADED (the restored session-16 pack carries no planted sentinel - it was sealed by a pre-v5.9 workflow or a birth; the sentinel planted by THIS run's pack phase is graded by the NEXT wake)
-WAKE: SAME PHONE - applied android_id survived the extra reboot; session advanced to 17
+DATA_PERSIST: NO (the restored session-17 pack planted a sentinel, but /data/local/tmp/pv-datapersist-sentinel.txt is absent or stale on this boot - /data was re-initialised on this wake; only the identity capsule carried over; raw read: '<missing/empty>')
+WAKE: SAME PHONE - applied android_id survived the extra reboot; session advanced to 18
 APP: ABSENT-BEFORE-INSTALL org.fdroid.fdroid - not present at the start of this wake
 APP: INSTALLED org.fdroid.fdroid (F-Droid.apk sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52)
 APP: SURVIVED reboot 2 - org.fdroid.fdroid still installed after the survival reboot
@@ -13,9 +13,9 @@ v3.7 changes over v3.6, from the roundtrip2 run No.13 verdict (raw output person
 v3.8 changes over v3.7, from the roundtrip3 run No.15 findings (raw output personally verified by Atlas): attempt S2 RAN but its verdict was polluted by workflow bugs (the /sdcard marker push failed at birth - Operation not permitted - so marker_ok was 0 from the start; the pack tar then TRUNCATED with tar_rc=2 on a full disk while PACK_OK=1 still printed, so snapshots/pv1 vanished on extraction and the boot-2 verdict read an EMPTY certificate); attempt C never ran (birth boot flake). v3.8 fixes, in order: MARKER - written by adb root to /data/local/tmp/phonevault-marker.txt (no FUSE layer), /sdcard demoted to a bounded-retry fallback, and a birth without a verified marker is NOT EVALUATED and never packed. PACK HYGIENE - PACK_OK requires tar_rc=0 and the AVD is never wiped under an untrusted pack; snapshots/default_boot (the emulator own 2.3 GB quick-boot cache, mutating at exit) is EXCLUDED; the integrity hash is computed after the tar exists, FROM the tar over its largest file, sealed into the attempt state handoff, and restore re-hashes the extracted file against it (match by construction). CERTIFICATE GATE - restore reads phonevault-version.txt FROM THE EXTRACTED FOLDER and asserts android_id non-empty + marker_ok=1 BEFORE booting; a failed gate is NOT EVALUATED, never IDENTITY LOST; the S restore additionally gates on snapshots/pv1/ram.bin existing non-empty, and if the restore boot log cannot show pv1 loading, even a matching identity is SNAPSHOT LOAD UNPROVEN, not SAME PHONE. BOOT ROBUSTNESS - waits raised to ~15 min with ONE in-attempt retry. Re-sequenced: attempt C (identity-as-code) FIRST, attempt S SECOND; each attempt is split into capture+pack and gated-restore+verdict steps because the fixed single steps exceed the per-step size gate. Everything else - graceful pack, runtime-read expected values, no hash or ID written into this workflow - is v3.7 unchanged.
 v3.9 changes over v3.8, from the roundtrip4 run No.17 failure (job FAILED in 7m 26s; the checker verified the output commit never landed: disk-full reported at job step 11 of 17, which is PhoneVault step 10 of 12 - roundtrip4 attempt C part 2 - and the final output step then had no room either; the run produced NO verdicts at all): the GitHub runner gives this job only ~14 GB of usable disk, and the SDK + system image + the AVD + multi-GB per-attempt state tars and snapshot payloads across two attempts eat it. v3.9 adds mode roundtrip5 = the roundtrip4 pair (attempt C FIRST, attempt S SECOND, every v3.8 gate unchanged) plus a DISK DISCIPLINE layer: (1) START-OF-JOB AUDIT in this step (section 0c): df -h before/after a CONSERVATIVE cleanup of standard runner junk this job never uses (the .NET SDK, the Haskell toolchain, Boost headers, hosted-toolcache Python/PyPy, pre-pulled docker images, and SDK system images OTHER than android-34 - cmdline-tools/emulator/platform-tools and the android-34 image are never touched); every removal is listed with its measured size. (2) PER-ATTEMPT CLEANUP: the moment an attempt verdict is sealed and its evidence copied out, that attempt local state tar (and, after attempt C, the restored AVD state files, under the same keep-list attempt S applies at its own start) is DELETED before the next attempt begins; df -h is printed at every attempt boundary. (3) MID-JOB DISK GUARD: a guard helper runs at the start of each roundtrip5 attempt step; free space under 2 GB seals that attempt as NOT EVALUATED (disk) and skips its body - a harness verdict, never a corrupted run and never evidence. (4) OUTPUT SURVIVAL: each attempt verdict is already copied into .pv-evidence-final the moment it is sealed; v3.9 additionally uploads that folder (text only, KBs) as its own artifact (phonevault-evidence) and writes both verdict lines to the GitHub step summary in the final step, BEFORE the output commit is attempted - a late disk-full can no longer swallow the verdicts. Everything else - graceful pack, certificate + snapshot gates, root marker path, boot retry, runtime-read expected values, no hash or ID written into this workflow - is v3.8 unchanged.
 v4.0 changes over v3.9, from the roundtrip5 run No.19 verdict (STATE.md has the sealed record): ROUNDTRIP5-C: IDENTITY RESTORED (code-applied) - identity-as-code is PROVEN (birth ID re-applied by root after a disk restore that woke with a different, re-initialised ID; survived the extra reboot); ROUNDTRIP5-S: IDENTITY LOST (clean) - snapshot route CLOSED on android-34 google_apis, as are disk-native transport (encryption wall) and no-lock birth. v4.0 adds NO experiment: it promotes attempt-C into production: two dispatch-only modes. BIRTH (07a) runs ONCE: fresh -wipe-data boot, root marker under the validity gate, capsule captured exactly as attempt C did, graceful stop, production pack (v3.9 hygiene: tar_rc=0, snapshots/ excluded, largest-file hash sealed + re-verified FROM the tar) with the capsule INSIDE the pack (pv-capsule.tar + capsule-manifest.txt members - a wake runs in a later run), certificate production=1 session=1 capsule_sha256 android_id marker_ok=1 born_utc, pack UPLOADED as phonevault-avd-state, sha256 printed. WAKE (07b/07c) is every later power-on: pin_run_id REQUIRED (birth or newest GOOD wake run, never newest-blind); certificate verified BEFORE extraction (android_id + marker_ok=1 + capsule re-hash + largest-file re-hash; failure = WAKE: NOT EVALUATED, certificate printed); clean hand-made folder, boot WITHOUT -wipe-data, control readings printed, capsule re-applied by root BEFORE any verdict read (tar at /, settings put LAST); WAKE: SAME PHONE only if ID + marker match after apply AND after a second reboot; then RE-PACKED with the same capsule, session+1, uploaded - state advances every wake. Full contract: phonevault/V40-NOTES.md. All earlier modes unchanged.
-run_started_utc: 2026-11-19T15:45:45Z
-workflow_run_number: 98
-workflow_run_id: 44558423564
+run_started_utc: 2026-11-19T16:55:34Z
+workflow_run_number: 99
+workflow_run_id: 44566569096
 workflow_run_attempt: 1
 mode: wake (push-triggered runs are always fresh; restore and all roundtrip modes are dispatch-only; birth and wake (v4.0 production) are dispatch-only)
 note: artifact transport is NOT the vault - DESIGN.md section 5 chunk_vault/HF wiring replaces it for real sessions (build step 3)
@@ -24,14 +24,14 @@ RUNNER_OS=Linux RUNNER_ARCH=X64 ImageOS=ubuntu26 ImageVersion=20261111.196.1
 Linux runnervmccnms 7.0.0-1019-azure #20-Ubuntu SMP PREEMPT Mon Oct 19 22:41:16 UTC 2026 x86_64 GNU/Linux
 2
                total        used        free      shared  buff/cache   available
-Mem:           7.7Gi       871Mi       6.3Gi        44Mi       915Mi       6.9Gi
+Mem:           7.7Gi       872Mi       6.3Gi        44Mi       911Mi       6.9Gi
 Swap:          3.0Gi          0B       3.0Gi
 /dev/root        72G   58G   15G  80% /
-crw-rw---- 1 root kvm 10, 232 Nov 19 15:44 /dev/kvm
+crw-rw---- 1 root kvm 10, 232 Nov 19 16:55 /dev/kvm
 KVM_GATE: PRESENT
 ===== 0b kvm permissions (standard GitHub emulator step) =====
 KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
-crw-rw-rw- 1 root kvm 10, 232 Nov 19 15:45 /dev/kvm
+crw-rw-rw- 1 root kvm 10, 232 Nov 19 16:55 /dev/kvm
 kvm_touch_rc=0 (0 = runner user can open the device)
 
 ########## .pv-evidence-final/00c-disk-audit.txt ##########
@@ -57,40 +57,40 @@ removed_paths: /usr/share/dotnet /opt/hostedtoolcache/Python /opt/hostedtoolcach
 -- free space AFTER cleanup --
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/root        72G   46G   27G  64% /
-PV_FREE_KB_AFTER_AUDIT=27539560
+PV_FREE_KB_AFTER_AUDIT=27540756
 
 ########## .pv-evidence-final/00d-disk-c1.txt ##########
-disk guard (attempt C part 1 start): free_kb=22285732 floor_kb=2097152
+disk guard (attempt C part 1 start): free_kb=22287012 floor_kb=2097152
 /dev/root        72G   51G   22G  71% /
 DISK_GUARD=OK (attempt C part 1 start)
 
 ########## .pv-evidence-final/00e-disk-c2.txt ##########
-disk guard (attempt C part 2 start): free_kb=22285572 floor_kb=2097152
+disk guard (attempt C part 2 start): free_kb=22286852 floor_kb=2097152
 /dev/root        72G   51G   22G  71% /
 DISK_GUARD=OK (attempt C part 2 start)
 
 ########## .pv-evidence-final/00f-disk-s1.txt ##########
-disk guard (attempt S part 1 start): free_kb=22285420 floor_kb=2097152
+disk guard (attempt S part 1 start): free_kb=22286716 floor_kb=2097152
 /dev/root        72G   51G   22G  71% /
 DISK_GUARD=OK (attempt S part 1 start)
 
 ########## .pv-evidence-final/00g-disk-s2.txt ##########
-disk guard (attempt S part 2 start): free_kb=22285280 floor_kb=2097152
+disk guard (attempt S part 2 start): free_kb=22286580 floor_kb=2097152
 /dev/root        72G   51G   22G  71% /
 DISK_GUARD=OK (attempt S part 2 start)
 
 ########## .pv-evidence-final/00h-disk-birth.txt ##########
-disk guard (production birth start): free_kb=22285056 floor_kb=2097152
+disk guard (production birth start): free_kb=22286356 floor_kb=2097152
 /dev/root        72G   51G   22G  71% /
 DISK_GUARD=OK (production birth start)
 
 ########## .pv-evidence-final/00i-disk-wake.txt ##########
-disk guard (production wake part 1 start): free_kb=22284864 floor_kb=2097152
+disk guard (production wake part 1 start): free_kb=22286160 floor_kb=2097152
 /dev/root        72G   51G   22G  71% /
 DISK_GUARD=OK (production wake part 1 start)
 
 ########## .pv-evidence-final/00j-disk-wake2.txt ##########
-disk guard (production wake part 2 start): free_kb=17097056 floor_kb=2097152
+disk guard (production wake part 2 start): free_kb=17093236 floor_kb=2097152
 /dev/root        72G   56G   17G  78% /
 DISK_GUARD=OK (production wake part 2 start)
 
@@ -138,22 +138,22 @@ id: 39 or "pixel_6a"
     OEM : Google
 pixel_6_listed=1
 -- installed system-image dir --
-total 4364356
-drwxr-xr-x 3 runner runner       4096 Nov 19 15:47 .
-drwxr-xr-x 3 runner runner       4096 Nov 19 15:47 ..
--rw-r--r-- 1 runner runner   19603789 Nov 19 15:46 NOTICE.txt
--rw-r--r-- 1 runner runner        356 Nov 19 15:46 VerifiedBootParams.textproto
--rw-r--r-- 1 runner runner        689 Nov 19 15:46 advancedFeatures.ini
--rw-r--r-- 1 runner runner       5008 Nov 19 15:46 build.prop
-drwxr-xr-x 3 runner runner       4096 Nov 19 15:47 data
--rw-r--r-- 1 runner runner   18874368 Nov 19 15:46 encryptionkey.img
--rw-r--r-- 1 runner runner   17374688 Nov 19 15:46 kernel-ranchu
--rw-r--r-- 1 runner runner      19303 Nov 19 15:47 package.xml
--rw-r--r-- 1 runner runner    1820484 Nov 19 15:46 ramdisk.img
--rw-r--r-- 1 runner runner        357 Nov 19 15:46 source.properties
--rw-r--r-- 1 runner runner 4306501632 Nov 19 15:46 system.img
--rw-r--r-- 1 runner runner    1048576 Nov 19 15:46 userdata.img
--rw-r--r-- 1 runner runner  103809024 Nov 19 15:47 vendor.img
+total 4364352
+drwxr-xr-x 3 runner runner       4096 Nov 19 16:57 .
+drwxr-xr-x 3 runner runner       4096 Nov 19 16:57 ..
+-rw-r--r-- 1 runner runner   19603789 Nov 19 16:56 NOTICE.txt
+-rw-r--r-- 1 runner runner        356 Nov 19 16:56 VerifiedBootParams.textproto
+-rw-r--r-- 1 runner runner        689 Nov 19 16:56 advancedFeatures.ini
+-rw-r--r-- 1 runner runner       5008 Nov 19 16:56 build.prop
+drwxr-xr-x 3 runner runner       4096 Nov 19 16:57 data
+-rw-r--r-- 1 runner runner   18874368 Nov 19 16:56 encryptionkey.img
+-rw-r--r-- 1 runner runner   17374688 Nov 19 16:56 kernel-ranchu
+-rw-r--r-- 1 runner runner      19303 Nov 19 16:57 package.xml
+-rw-r--r-- 1 runner runner    1820484 Nov 19 16:56 ramdisk.img
+-rw-r--r-- 1 runner runner        357 Nov 19 16:56 source.properties
+-rw-r--r-- 1 runner runner 4306501632 Nov 19 16:57 system.img
+-rw-r--r-- 1 runner runner    1048576 Nov 19 16:57 userdata.img
+-rw-r--r-- 1 runner runner  103809024 Nov 19 16:57 vendor.img
 -- sdkmanager --list_installed, system-images lines --
   system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
 ----- 2b create attempts (FULL avdmanager output in section 02b) -----
@@ -200,8 +200,8 @@ host sync done (host page cache flushed before tar)
 /dev/root        72G   51G   22G  71% /
 1.1M	/home/runner/.android/avd/factoryphone.avd
 total 1.1M
--rw-r--r-- 1 runner runner 3.5K Nov 19 15:47 config.ini
--rw-r--r-- 1 runner runner 1.0M Nov 19 15:46 userdata.img
+-rw-r--r-- 1 runner runner 3.5K Nov 19 16:57 config.ini
+-rw-r--r-- 1 runner runner 1.0M Nov 19 16:57 userdata.img
 
 ########## .pv-evidence-final/06-pack.txt ##########
 ===== 6 pack AVD state (artifact transport - NOT the vault) =====
@@ -219,338 +219,12 @@ mode=wake - production birth not applicable (birth mode only)
 ===== 7b production WAKE part 1 (v4.0): pinned + gated restore, capsule re-apply (wake mode only) =====
 pin_run_id_input=42962306124
 wake rule (poisoned-shelf lesson, run No.9): NEVER newest-blind - pin_run_id names the birth run or the newest GOOD wake run; the pack is accepted only when its OWN certificate passes the gates below BEFORE extraction or boot.
-VAULT FETCH OK prefix=pkg-809a22d8
+VAULT FETCH OK prefix=pkg-74de6ad4
 vault_fetch_ok=1 (1 = from vault jasveerai92/phonevault-one; 0 = artifact route below)
 -- v5.4: pack fetched from the HF vault - artifact download skipped --
--rw-r--r-- 1 runner runner 1.4G Nov 19 15:47 pv-wake-dl/phonevault-state.tar
+-rw-r--r-- 1 runner runner 1.5G Nov 19 16:57 pv-wake-dl/phonevault-state.tar
 -- CERTIFICATE GATE (BEFORE extraction or boot): the pack's own phonevault-version.txt must prove android_id present + marker_ok=1, capsule integrity (pv-capsule.tar re-hashed vs capsule_sha256) and disk integrity (largest userdata file re-hashed vs largest_userdata_sha256). Gate failure = WAKE: NOT EVALUATED, certificate printed --
 -- pinned pack's phonevault-version.txt (the certificate the verdict uses) --
-avd_name=factoryphone
-system_image=system-images;android-34;google_apis;x86_64
-emulator_version=/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64: error while loading shared libraries: libpulse.so.0: cannot open shared object file: No such file or directory
-emulator_pkg_revision=37.2.13
-system_image_revision=14
-production=1
-session=16
-born_utc=2026-11-10T02:24:13Z
-packed_utc=2026-11-11T05:11:28Z
-android_id=1949761e11e63f9c
-marker_token=pv1-20261110022531-6ce47faa
-marker_ok=1
-marker_guest_path=/data/local/tmp/phonevault-marker.txt
-route=wake-v4.0
-identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; root re-apply BEFORE identity read on every wake)
-capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949
-settings_secure_md5_birth=5f9d29b51d7428a936a5a7f74b2a11f1
-largest_userdata_file=userdata-qemu.img.qcow2
-largest_userdata_size_bytes=1453916160
-largest_userdata_sha256=36391eaec9bd51c4b52b0711c21a4c84b3586cb0f43cd8076167f0206e5b141e
-packed_file: userdata-qemu.img.qcow2 1453916160 bytes
-packed_file: userdata-qemu.img 6488064 bytes
-packed_file: encryptionkey.img.qcow2 2031616 bytes
-packed_file: encryptionkey.img 18874368 bytes
-packed_file: config.ini 3783 bytes
-packed_file: emulator-user.ini 113 bytes
-packed_file: hardware-qemu.ini 4211 bytes
-packed_file: pv-capsule.tar 14336 bytes
-packed_file: capsule-manifest.txt 310 bytes
-packed_file: phonevault-version.txt (this file)
-certificate values: android_id=1949761e11e63f9c marker_ok=1 marker_token=pv1-20261110022531-6ce47faa marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 session=16 born_utc=2026-11-10T02:24:13Z largest_userdata_file=userdata-qemu.img.qcow2
-integrity: sha256(pv-capsule.tar from the pack)=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 vs certificate capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949; sha256(userdata-qemu.img.qcow2 from the pack)=36391eaec9bd51c4b52b0711c21a4c84b3586cb0f43cd8076167f0206e5b141e vs certificate largest_userdata_sha256=36391eaec9bd51c4b52b0711c21a4c84b3586cb0f43cd8076167f0206e5b141e
-certificate gate PASSED: android_id=1949761e11e63f9c marker_ok=1 capsule + disk integrity match the certificate
--- V60 PRODUCTION POSTURE RULE: this run's images are patched iff the restored pack's certificate carries userdata_posture=fstab-unencrypted-v1 (lineage value read from the certificate: '<absent>'). A plaintext-born /data must never boot under an encrypted fstab and an FBE-born /data never under a stripped one; a lineage with no such certificate line (Phone One, Phone Two, pre-v6.0 Verify) boots the untouched images and this wake behaves exactly as v5.9 --
-POSTURE: SKIPPED - the restored pack's lineage is unpatched (userdata_posture='<absent>'); images untouched - this wake behaves exactly as v5.9
--- process gate: a leftover qemu-system is cleared and verified gone first --
--- extract into a CLEAN HAND-MADE AVD folder (no avdmanager pre-create - the diagnosis clean-room rule) --
-untar_rc=0
-total 1.4G
--rw-r--r-- 1 runner runner  310 Nov 10 02:25 capsule-manifest.txt
--rw-r--r-- 1 runner runner 3.7K Nov 10 02:24 config.ini
--rw-r--r-- 1 runner runner  113 Nov 11 05:11 emulator-user.ini
--rw------- 1 runner runner  18M Nov 10 02:24 encryptionkey.img
--rw-r--r-- 1 runner runner 2.0M Nov 11 05:11 encryptionkey.img.qcow2
--rw-r--r-- 1 runner runner 4.2K Nov 11 04:58 hardware-qemu.ini
--rw-r--r-- 1 runner runner 1.5K Nov 11 05:11 phonevault-version.txt
--rw-r--r-- 1 runner runner  14K Nov 10 02:25 pv-capsule.tar
--rw------- 1 runner runner 6.2M Nov 10 02:24 userdata-qemu.img
--rw-r--r-- 1 runner runner 1.4G Nov 11 05:11 userdata-qemu.img.qcow2
--- wake boot (standard flags, -no-snapshot, NEVER -wipe-data) --
--- boot attempt 1 (extra flags: -no-snapshot) --
-emulator_pid=3070
-* daemon not running; starting now at tcp:5037
-* daemon started successfully
-wait_for_device_rc=0
-boot poll 1 (attempt 1): sys.boot_completed=''
-boot poll 2 (attempt 1): sys.boot_completed=''
-boot poll 3 (attempt 1): sys.boot_completed=''
-boot poll 4 (attempt 1): sys.boot_completed='1'
-boot_wait_result: sys.boot_completed=1 reached on attempt 1
-android_id_BEFORE_apply=d49b3aec3eee67bc (CONTROL reading, taken BEFORE any apply on purpose: the encryption wall - runs No.9/11 and the diagnosis proved the disk restore re-initialises /data, so this is expected NOT to be the certificate value; identity is applied next, by code)
-marker_BEFORE_apply (/data/local/tmp/phonevault-marker.txt)='<missing/empty>'
-restarting adbd as root
-adb_root_rc=0
-root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
-rooted=1
--- apply the capsule as root (BEFORE identity is read for the verdict): push the capsule tar FROM THE PACK, extract at /, then settings put LAST so the settings provider's own write is the final word --
-/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 17.8 MB/s (14336 bytes in 0.001s)
-capsule_push_rc=0
-capsule_extract_rc=0
-apply hygiene: the placed capsule carries no account state (identity-only capsule) - no account files were placed and no guest file is touched; v5.9 behaviour
-settings_put_rc=0
-android_id_AFTER_apply=1949761e11e63f9c
-marker_AFTER_apply (/data/local/tmp/phonevault-marker.txt)=pv1-20261110022531-6ce47faa (expected: pv1-20261110022531-6ce47faa)
--rw-r--r-- 1 runner runner 1366284 Nov 19 15:49 .pv-screencap.png
-wake part 1 complete - the guest stays BOOTED; part 2 reboots it and judges survival; handoff in .pv-evidence/pv40-wake-state.txt
-WAKE_STATE=PENDING
-CID=1949761e11e63f9c
-CTOKEN=pv1-20261110022531-6ce47faa
-CMPATH=/data/local/tmp/phonevault-marker.txt
-CCAPSHA=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949
-CMD5=5f9d29b51d7428a936a5a7f74b2a11f1
-CBORN=2026-11-10T02:24:13Z
-CSES=16
-CSENT=
-CPOST=
-CACCT=
-PRE_ID=d49b3aec3eee67bc
-POST_ID=1949761e11e63f9c
-POST_MARKER=pv1-20261110022531-6ce47faa
-
-########## .pv-evidence-final/07b1-seat.txt ##########
-===== 07b1 seat app side-load (v6.4): ONE extra app installed BEFORE the live window opens, so the seating target can be fetched inside the window =====
--- seat app: Aurora Store 4.8.4 (versionCode 76), F-Droid repo build - the sha256 pin is the hash in F-Droid's signed repo index (index-v2) for this exact file, desk-verified 2026-11-14 (job #13); the download is verified BEFORE install and a mismatch is skipped, never installed (the step-15 manifest discipline, one app, before the window); the outcome never touches the identity verdict --
-                                 Dload  Upload  Total   Spent   Left   Speed
-  0      0   0      0   0      0      0      0                              0  2  8.92M   2 223.6k   0      0 221.6k      0   00:41   00:01   00:40 222.0k100  8.92M 100  8.92M   0      0  4.56M      0   00:01   00:01         222.0k100  8.92M 100  8.92M   0      0  4.55M      0   00:01   00:01         222.0k100  8.92M 100  8.92M   0      0  4.55M      0   00:01   00:01         222.0k
-seat download hash verified: sha256=fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11 matches the F-Droid index pin
-Performing Streamed Install
-Success
-adb_install_rc=0 (aurora-store-4.8.4.apk)
-SEAT: INSTALLED com.aurora.store (aurora-store-4.8.4.apk sha256=fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11) - present BEFORE the live window opens
-
-########## .pv-evidence-final/07b2-live-egress.txt ##########
-===== 07b2 production WAKE live window + steady egress (v5.1) =====
--- steady egress (input egress=steady) --
--- WebShare pinned direct proxy - authorize this runner IP host-side --
-runner public ip: 57.151.137.138
-ip authorization list: http=200
-deleted stale ip authorization id=16301702 http=204 (204 = deleted)
-ip authorization create: http=201
-{"id":16301719,"ip_address":"57.151.137.138","created_at":"2026-11-19T15:49:30.345082Z","last_used_at":null} <- create response (truncated)
-pre-check: endpoint host='198.23.243.226' port='6361' (host/port only)
-pre-check: host is a numeric IP - no DNS lookup needed
-pre-check: TCP connect 198.23.243.226:6361 OK
-host probe: egress='<no answer>' expected='198.23.243.226' (diagnostics: curl_exit=7 http=000; curl said: curl: (7) CONNECT tunnel failed, response 402)
-host probe failed/mismatch - guest proxy NOT set; WARP next
--- WARP fallback --
-warp install/connect rc=0 (attempt 1; log tail:)
-Success
-Status update: Disconnected
-Reason: Manual Disconnection
-cloudflare trace after WARP: warp=on
-EGRESS: WARP (unsteady fallback - a shared Cloudflare pool IP near the runner region; steadiness degraded by design, Lane 2 grade D)
--- live view --
-live window: 60 min
-/home/runner/work/cloud-android-probe/cloud-android-probe/.pv-liveview/cloudflared: OK
-cloudflared version 2026.10.7 (built 2026-10-30-17:05 UTC)
-per-run token generated
-slideshow server started (pid 5390)
-ws-scrcpy install failed - slideshow carries (npm log:)
-npm error path /home/runner/work/cloud-android-probe/cloud-android-probe/.pv-liveview/wss/node_modules/wrtc
-npm error command failed
-npm error command sh -c node scripts/download-prebuilt.js
-npm error /bin/sh: 1: node-pre-gyp: not found
-npm error A complete log of this run can be found in: /home/runner/.npm/_logs/2026-11-19T15_51_35_073Z-debug-0.log
-gate self-test: 404
-live health OK (poll 1)
-live public poll 1: http=000
-live public poll 2: http=200
-LIVE: url=https://investigators-dogs-transformation-intention.trycloudflare.com/h5ObnYNnLJKirwf_JdlMQKMRP7Bz38jKKTYBh5dCvw4/ token=h5ObnYNnLJKirwf_JdlMQKMRP7Bz38jKKTYBh5dCvw4 mode=slideshow window=60min expires=end of this live window (the tunnel is killed in this step) fallback=https://investigators-dogs-transformation-intention.trycloudflare.com/h5ObnYNnLJKirwf_JdlMQKMRP7Bz38jKKTYBh5dCvw4/fallback/ control=tap + buttons + text on the page
-LIVE PUBLISH: live link published to branch phonevault-live (live-now.txt) - readable during the window from that branch's raw live-now.txt
-LIVE: window complete (60 min)
-LIVE PUBLISH: tombstone published to branch phonevault-live (window closed 2026-11-19T16:52:59Z)
-live view processes stopped
-
-########## .pv-evidence-final/07c-wake2.txt ##########
-===== 7c production WAKE part 2 (v4.3): app side-load, second reboot, identity verdict, state re-pack =====
-lineage posture carried into the outgoing certificate: userdata_posture=unpatched (read from the restored pack's certificate via part 1; the outgoing pack must seal the SAME value or the next wake would patch-or-skip on a lie)
-wake handoff read: android_id=1949761e11e63f9c marker_token=pv1-20261110022531-6ce47faa marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 session=16 born_utc=2026-11-10T02:24:13Z control_pre_apply_id=d49b3aec3eee67bc post_apply_id=1949761e11e63f9c
--- DATA-PERSIST SELF-TEST (v5.9): sentinel planted in the guest at a fixed /data path by the PREVIOUS run's pack phase; read BEFORE any app install in this verdict phase. YES = /data content crossed the wake; NO = /data was re-initialised (only the identity capsule carried); UNGRADED = the restored pack predates the sentinel writer --
-DATA_PERSIST: UNGRADED (the restored session-16 pack carries no planted sentinel - it was sealed by a pre-v5.9 workflow or a birth; the sentinel planted by THIS run's pack phase is graded by the NEXT wake)
--- V60 PRODUCTION POSTURE CHECK + ACCOUNT STATE: the guest's crypto state, its governing fstab /data line, and the account list AMS serves - all read after capsule apply + the survival reboot, before any app install in this run --
-POSTURE CHECK (guest): ro.crypto.state=encrypted ro.crypto.type=file
-POSTURE CHECK (guest): vendor fstab /data line: /dev/block/vdc   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount
-ACCOUNT_STATE: 0 account(s) listed by AMS after capsule apply + reboot 2 (no expectation carried - the restored pack's capsule_accounts is not planted)
--- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --
-apps manifest in use: phonevault/apps/apps.txt
-APP: ABSENT-BEFORE-INSTALL org.fdroid.fdroid - not present at the start of this wake
-hash verified for F-Droid.apk: sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52 matches the manifest
-Performing Streamed Install
-Success
-adb_install_rc=0 (F-Droid.apk)
-APP: INSTALLED org.fdroid.fdroid (F-Droid.apk sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52)
-## Network stats: elapsed time=210ms (0ms mobile, 0ms wifi, 210ms not connected)
--rw-r--r-- 1 runner runner 84242 Nov 19 16:53 .pv-screencap.png
--- SECOND reboot (plain guest reboot): the run No.19 standard - a wake counts only if the applied identity survives it --
-reboot_rc=0
-wait_for_device_rc=0
-reboot poll 1: sys.boot_completed=''
-reboot poll 2: sys.boot_completed=''
-reboot poll 3: sys.boot_completed='1'
-reboot_wait_result: sys.boot_completed=1 reached
-android_id_AFTER_reboot2=1949761e11e63f9c
-marker_AFTER_reboot2 (/data/local/tmp/phonevault-marker.txt)=pv1-20261110022531-6ce47faa
-APP: SURVIVED reboot 2 - org.fdroid.fdroid still installed after the survival reboot
--- DATA-PERSIST SELF-TEST (v5.9): planting the sentinel the NEXT wake will grade (fixed /data path; written while the guest is still up, before the graceful stop, so it rides this run's re-pack) --
-sentinel_write_rc=0
-sentinel readback: 'pv-datapersist session=17 planted_utc=2026-11-19T16:54:15Z run_id=44558423564'
-sentinel planted for session 17 (the outgoing pack's certificate will carry datapersist_sentinel=planted)
--- V60 PRODUCTION ACCOUNT PHASE (FINAL, job #8): re-capture the EXTENDED identity capsule (identity files + accounts_de.db + accounts_ce.db as an atomic pair + sync/accounts.xml + the whole GSF dir + the whole GMS dir; the keystore is NOT carried - CAPSULE-ACCOUNT-DESIGN.md section 6) on EVERY successful wake, because GMS refreshes authtokens during the live window - a birth-frozen capsule would seal stale tokens. The mechanism this production form carries was proven live on the v60-test lineage (grading wake 43602751221: the account sealed into the capsule was listed by AMS after capsule apply + reboot 2). Three proven pieces, folded in by the r8-r11 deltas: (1) CAPTURE = the r9 adb-root-pull primitive with a host paircheck gate (this step inherits NO root state - adbd root from wake part 1 does not survive reboot 2 - so root is re-established and verified uid=0 in-step before any account read; the earlier snapshot/stop capture designs were removed after failing live and are NOT in this phase); (2) ASSEMBLY = the r11 MERGE construction - the extended capsule is built on top of the phone's incoming capsule, never from a fresh staging tree, with the r10 guest source facts printed at assembly and the GSF/GMS dirs staged by the guest root tar; (3) CHECK = the full table in its STRICT production form: every expected item printed with present/absent AND origin, ALL missing required items collected and named at once, and NO documented-absence exception - on an enrolled production guest sync/accounts.xml, the GSF dir, gservices.db and the GMS dir are all definitionally present, so an absent source is itself a seal failure. Any failure keeps the previous capsule byte-unchanged and seals capsule_accounts=absent - never a false plant; planted seals only for a verified capture holding >= 1 real account --
--- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 test phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --
-adb_root_rc=0
-account capture root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
-ACCOUNT CAPTURE: adb root verified (uid=0 shell in this step)
-keystore probe (facts for the keystore question; the keystore is NOT carried by this capsule):
-persistent.sqlite
-timestamp
-vpnprofilestore.sqlite
-gms/gsf guest sizes:
-44	/data/data/com.google.android.gms
-1	/data/data/com.google.android.gsf
-/data/system_de/0/accounts_de.db 1000 1000 660
-/data/system_ce/0/accounts_ce.db 1000 1000 660
-stat: '/data/system/sync/accounts.xml': No such file or directory
--rw-rw---- 1 system system u:object_r:system_data_file:s0  40960 2026-11-19 15:48 /data/system_ce/0/accounts_ce.db
--rw-rw---- 1 system system u:object_r:system_data_file:s0  65536 2026-11-19 15:48 /data/system_de/0/accounts_de.db
--- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). No framework stop and no guest-side snapshot open exist anywhere in this phase. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present) and /data/system/sync/accounts.xml when present; the GSF/GMS whole dirs enter at assembly below via a guest root tar of the source paths (a plain tree pull does not preserve uid/gid/mode; the root tar does - the identity capsule's own tree method). The host paircheck (the production verifier above: sqlite integrity_check on both files + DE/CE (id,name,type) identity) is the gate - a torn or inconsistent pull fails the check and is re-pulled, never sealed; consistency is checked, not assumed from a quiesce. Capture runs on an idle, settled guest (post-verdict, no enrolment in flight in this step) --
--- adb-root pull attempt 1 of 3 --
-/data/system_de/0/accounts_de.db: 1 file pulled, 0 skipped. 8.2 MB/s (65536 bytes in 0.008s)
-/data/system_ce/0/accounts_ce.db: 1 file pulled, 0 skipped. 11.4 MB/s (40960 bytes in 0.003s)
-sync/accounts.xml: absent on this guest at capture (the strict table below treats this as a seal failure on an enrolled production guest)
-PVACC integrity de: ok
-PVACC integrity ce: ok
-PVACC de accounts: 0 ce accounts: 0
-PVACC_RESULT: VERIFY_OK
-ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt 1, paircheck OK - integrity ok on both DBs, DE/CE (id,name,type) rows identical)
-ACCOUNT CAPTURE: verified via adb-root-pull on attempt 1 (the DB copies in pv-acct passed host paircheck; 0 account(s) in the captured DBs; sync/accounts.xml: absent)
--- capture normalisation (production-only refinement, design section 16): fold any -wal content of the pulled host copies into the main DB files and drop the journal siblings, so the copies the assembly stages are standalone-complete. On the test lineage this fold happened inside the plant tool; production has no plant, so it happens here, on the verified copies, before assembly. Without it, a main-file-only overlay could strand un-checkpointed account rows in a journal that does not ride the capsule --
-PVACCNORM pv-acct/accounts_de.db journal_mode=delete integrity=ok
-PVACCNORM pv-acct/accounts_ce.db journal_mode=delete integrity=ok
--- capsule assembly (r11 MERGE construction, production form): the extended capsule is assembled ON TOP OF THE INCOMING CAPSULE, not rebuilt from a fresh staging tree. The incoming capsule is /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar on this host: wake part 1 extracted the verified pinned pack into the hand-made AVD folder, gate-verified this file's sha256 against the certificate's capsule_sha256 BEFORE boot, and pushed it from exactly this path for the capsule apply - so at this point in the wake it is still the incoming capsule (this phase overwrites it only on the success path below), and its extracted form IS retained; no re-extraction from the pack is needed. The phase pushes it to the guest and extracts it as root into the staging tree FIRST (the tar records uid/gid/mode; the root extract restores them), so settings_secure.xml + the marker are present BY CONSTRUCTION. Overlays then land on that base by path: the paircheck-verified DB copies (staging paths only, canonical recorded uid/gid/mode - they never touch the canonical DB paths in this design), sync/accounts.xml when captured, and the GSF/GMS whole dirs via the guest root tar. On later wakes the merge base is the previous wake's EXTENDED capsule, so the overlay refreshes the account set by path while identity and previously carried files persist by construction - exactly the permanence semantics the role needs. The copy is live; the DB pair - the sealed content - is the paircheck-verified pull --
-ACCOUNT ASSEMBLY INCOMING CAPSULE: /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 (gate-verified against the certificate in wake part 1; this listing is the merge base and the origin evidence for the identity rows of the strict table):
-data/system/users/0/settings_secure.xml
-data/local/tmp/phonevault-marker.txt
-/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 105.7 MB/s (14336 bytes in 0.000s)
-incoming_capsule_push_rc=0
--- account assembly source facts (r10, guest ls as root):
-drwx--x--x 22 u0_a128 u0_a128 4096 2026-11-19 16:35 /data/data/com.google.android.gms
-drwx------  7 u0_a128 u0_a128 4096 2026-11-19 15:49 /data/data/com.google.android.gsf
-1	/data/data/com.google.android.gsf
-44	/data/data/com.google.android.gms
-ACCOUNT ASSEMBLY SOURCE FACT: gsf=present gms=present (guest /data/data dirs as root; production strict form: on an enrolled guest BOTH dirs are required - a source fact of absent is itself a seal failure, collected by the strict table below)
-pv_base_extract_rc=0
--rw-rw-rw- 1 root   root      28 2026-11-10 02:25 /data/local/tmp/pv-capstage/data/local/tmp/phonevault-marker.txt
--rw------- 1 system system 11280 2026-11-10 02:25 /data/local/tmp/pv-capstage/data/system/users/0/settings_secure.xml
-pv-acct/accounts_de.db: 1 file pushed, 0 skipped. 1.8 MB/s (65536 bytes in 0.035s)
-pv-acct/accounts_ce.db: 1 file pushed, 0 skipped. 222.3 MB/s (40960 bytes in 0.000s)
--rw-rw---- 1 system system u:object_r:shell_data_file:s0  40960 2026-11-19 16:54 /data/local/tmp/pv-capstage/data/system_ce/0/accounts_ce.db
--rw-rw---- 1 system system u:object_r:shell_data_file:s0  65536 2026-11-19 16:54 /data/local/tmp/pv-capstage/data/system_de/0/accounts_de.db
--- account assembly dirs tar (r10): guest root tar of the present source dirs, extracted into the staging tree ON TOP OF the capsule base (the tar records uid/gid/mode; the root extract restores them; an explicitly named source dir yields at least its directory entry, so a present-but-empty dir still lands in the staging tree and in the capsule tar) --
-pv_dirs_tar_rc=0
--rw-rw-rw- 1 root root 30697984 2026-11-19 16:54 /data/local/tmp/pv-dirs.tar
-pv_dirs_extract_rc=0
--- account assembly staged result:
-com.google.android.gms
-com.google.android.gsf
-1	/data/local/tmp/pv-capstage/data/data/com.google.android.gsf
-34	/data/local/tmp/pv-capstage/data/data/com.google.android.gms
-extended_capsule_tar_rc=0
-/data/local/tmp/pv-capsule.tar: 1 file pulled, 0 skipped. 38.4 MB/s (30824960 bytes in 0.766s)
-PVACC integrity de: ok
-PVACC integrity ce: ok
-PVACC de accounts: 0 ce accounts: 0
-PVACC_RESULT: VERIFY_OK
--- capsule manifest: written BEFORE the strict full-table check so the table can carry the manifest row; its identity values are the incoming capsule's own (CID/CTOKEN/CMPATH/CMD5 were read by wake part 1 from the pinned pack's certificate, whose capsule_sha256 gate-verified the merge base above) --
-ACCOUNT PHASE: outgoing manifest written (capsule_sha256=87b5f684676ddaab103b4ac137c0daa576e5c577688b8f7abd60888ffc506a83)
--- account capsule listings used by the strict table: the INCOMING listing (merge base) was printed at assembly; the MERGED listing follows (head -30):
-data/
-data/system/
-data/system/users/
-data/system/users/0/
-data/system/users/0/settings_secure.xml
-data/system/sync/
-data/local/
-data/local/tmp/
-data/local/tmp/phonevault-marker.txt
-data/system_de/
-data/system_de/0/
-data/system_de/0/accounts_de.db
-data/system_ce/
-data/system_ce/0/
-data/system_ce/0/accounts_ce.db
-data/data/
-data/data/com.google.android.gsf/
-data/data/com.google.android.gsf/cache/
-data/data/com.google.android.gsf/cache/oat_primary/
-data/data/com.google.android.gsf/cache/oat_primary/x86_64/
-data/data/com.google.android.gsf/cache/oat_primary/x86_64/GoogleServicesFramework.art
-data/data/com.google.android.gsf/code_cache/
-data/data/com.google.android.gsf/databases/
-data/data/com.google.android.gsf/databases/gservices.db
-data/data/com.google.android.gsf/databases/gservices.db-journal
-data/data/com.google.android.gsf/databases/googlesettings.db
-data/data/com.google.android.gsf/databases/googlesettings.db-journal
-data/data/com.google.android.gsf/files/
-data/data/com.google.android.gsf/files/profileInstalled
-data/data/com.google.android.gsf/files/security_token
-/home/runner/work/_temp/5ebedc3d-71e1-40c4-b7b8-5b4e4ec80844.sh: line 436: printf: Broken pipe
-/home/runner/work/_temp/5ebedc3d-71e1-40c4-b7b8-5b4e4ec80844.sh: line 436: printf: write error: Broken pipe
-merged capsule listing: 821 entries in total
-ACCOUNT CAPSULE TABLE: settings_secure.xml | data/system/users/0/settings_secure.xml | PRESENT | origin: incoming-capsule
-ACCOUNT CAPSULE TABLE: phonevault-marker.txt | data/local/tmp/phonevault-marker.txt | PRESENT | origin: incoming-capsule
-ACCOUNT CAPSULE TABLE: accounts_de.db | data/system_de/0/accounts_de.db | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: accounts_ce.db | data/system_ce/0/accounts_ce.db | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: capsule-manifest.txt | pv-capsule-acct/capsule-manifest.txt (outgoing, beside the capsule tar) | PRESENT | origin: phase-staged (identity values carried from the incoming capsule)
-ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (absent at capture - on an enrolled production guest the sync state is part of the required account set; seal failure) | origin: phase-staged
-ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | PRESENT | origin: phase-staged
-ACCOUNT CAPSULE TABLE VERDICT: INCOMPLETE - missing required item(s): sync/accounts.xml
-ACCOUNT PHASE: FAILED - extended capsule merge incomplete - missing required item(s): sync/accounts.xml (the full table above lists every item at once; previous capsule kept, capsule_accounts=absent); the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent
-framework was never stopped in this run (capture primitive: adb-root-pull - no quiesce exists in this design) - no restart to perform or prove
-ACCOUNT CAPTURE CONTROL: 0 account(s) listed by AMS in this run after the re-capture (the live guest's account state was not disturbed by the capture)
-OK: killing emulator, bye bye
-OK
-emu_kill_rc=0
-shutdown poll 1: still alive: qemu-system present
-graceful stop confirmed at poll 2
-host sync done
-/dev/root        72G   56G   17G  78% /
--- AVD folder listing BEFORE pack --
-total 1.5G
--rw------- 1 runner runner    0 Nov 19 16:54 bootcompleted.ini
--rw-r--r-- 1 runner runner  66M Nov 19 15:47 cache.img
--rw-r--r-- 1 runner runner 193K Nov 19 15:47 cache.img.qcow2
--rw-r--r-- 1 runner runner  310 Nov 10 02:25 capsule-manifest.txt
--rw-r--r-- 1 runner runner 3.7K Nov 10 02:24 config.ini
-drwxr-xr-x 3 runner runner 4.0K Nov 19 15:47 data
--rw-r--r-- 1 runner runner  282 Nov 19 15:47 emu-launch-params.txt
--rw-r--r-- 1 runner runner  113 Nov 19 16:54 emulator-user.ini
--rw------- 1 runner runner  18M Nov 10 02:24 encryptionkey.img
--rw-r--r-- 1 runner runner 1.9M Nov 19 16:53 encryptionkey.img.qcow2
--rw-r--r-- 1 runner runner 4.2K Nov 19 15:47 hardware-qemu.ini
--rw-r--r-- 1 runner runner 1.8M Nov 19 15:47 initrd
-drwxr-xr-x 3 runner runner 4.0K Nov 19 15:48 modem_simulator
--rw-r--r-- 1 runner runner    0 Nov 19 15:47 multiinstance.lock
--rw-r--r-- 1 runner runner   38 Nov 19 15:47 netsim.ini
--rw-r--r-- 1 runner runner 1.5K Nov 11 05:11 phonevault-version.txt
--rw-r--r-- 1 runner runner  14K Nov 10 02:25 pv-capsule.tar
--rw-r--r-- 1 runner runner    1 Nov 19 15:47 qemu-version.txt
--rw-r--r-- 1 runner runner    0 Nov 19 15:47 read-snapshot.txt
-drwxr-xr-x 2 runner runner 4.0K Nov 19 16:54 tmpAdbCmds
--rw------- 1 runner runner 6.2M Nov 10 02:24 userdata-qemu.img
--rw-r--r-- 1 runner runner 1.4G Nov 19 16:54 userdata-qemu.img.qcow2
--rw-r--r-- 1 runner runner    9 Nov 19 15:47 version_num.cache
--- phonevault-version.txt (in pack) --
 avd_name=factoryphone
 system_image=system-images;android-34;google_apis;x86_64
 emulator_version=Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)
@@ -585,14 +259,341 @@ packed_file: hardware-qemu.ini 4211 bytes
 packed_file: pv-capsule.tar 14336 bytes
 packed_file: capsule-manifest.txt 310 bytes
 packed_file: phonevault-version.txt (this file)
+certificate values: android_id=1949761e11e63f9c marker_ok=1 marker_token=pv1-20261110022531-6ce47faa marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 session=17 born_utc=2026-11-10T02:24:13Z largest_userdata_file=userdata-qemu.img.qcow2
+integrity: sha256(pv-capsule.tar from the pack)=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 vs certificate capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949; sha256(userdata-qemu.img.qcow2 from the pack)=fdd6a10ae83c2926ac04082c0a3480b83ae1d545466b567b5973b24f2b756e52 vs certificate largest_userdata_sha256=fdd6a10ae83c2926ac04082c0a3480b83ae1d545466b567b5973b24f2b756e52
+certificate gate PASSED: android_id=1949761e11e63f9c marker_ok=1 capsule + disk integrity match the certificate
+-- V60 PRODUCTION POSTURE RULE: this run's images are patched iff the restored pack's certificate carries userdata_posture=fstab-unencrypted-v1 (lineage value read from the certificate: 'unpatched'). A plaintext-born /data must never boot under an encrypted fstab and an FBE-born /data never under a stripped one; a lineage with no such certificate line (Phone One, Phone Two, pre-v6.0 Verify) boots the untouched images and this wake behaves exactly as v5.9 --
+POSTURE: SKIPPED - the restored pack's lineage is unpatched (userdata_posture='unpatched'); images untouched - this wake behaves exactly as v5.9
+-- process gate: a leftover qemu-system is cleared and verified gone first --
+-- extract into a CLEAN HAND-MADE AVD folder (no avdmanager pre-create - the diagnosis clean-room rule) --
+untar_rc=0
+total 1.5G
+-rw-r--r-- 1 runner runner  310 Nov 10 02:25 capsule-manifest.txt
+-rw-r--r-- 1 runner runner 3.7K Nov 10 02:24 config.ini
+-rw-r--r-- 1 runner runner  113 Nov 19 16:54 emulator-user.ini
+-rw------- 1 runner runner  18M Nov 10 02:24 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.9M Nov 19 16:53 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.2K Nov 19 15:47 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.4K Nov 19 16:54 phonevault-version.txt
+-rw-r--r-- 1 runner runner  14K Nov 10 02:25 pv-capsule.tar
+-rw------- 1 runner runner 6.2M Nov 10 02:24 userdata-qemu.img
+-rw-r--r-- 1 runner runner 1.4G Nov 19 16:54 userdata-qemu.img.qcow2
+-- wake boot (standard flags, -no-snapshot, NEVER -wipe-data) --
+-- boot attempt 1 (extra flags: -no-snapshot) --
+emulator_pid=2893
+* daemon not running; starting now at tcp:5037
+* daemon started successfully
+wait_for_device_rc=0
+boot poll 1 (attempt 1): sys.boot_completed=''
+boot poll 2 (attempt 1): sys.boot_completed=''
+boot poll 3 (attempt 1): sys.boot_completed='1'
+boot_wait_result: sys.boot_completed=1 reached on attempt 1
+android_id_BEFORE_apply=4fe17cae24402135 (CONTROL reading, taken BEFORE any apply on purpose: the encryption wall - runs No.9/11 and the diagnosis proved the disk restore re-initialises /data, so this is expected NOT to be the certificate value; identity is applied next, by code)
+marker_BEFORE_apply (/data/local/tmp/phonevault-marker.txt)='<missing/empty>'
+adb_root_rc=0
+root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
+rooted=1
+-- apply the capsule as root (BEFORE identity is read for the verdict): push the capsule tar FROM THE PACK, extract at /, then settings put LAST so the settings provider's own write is the final word --
+/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 44.8 MB/s (14336 bytes in 0.000s)
+capsule_push_rc=0
+capsule_extract_rc=0
+apply hygiene: the placed capsule carries no account state (identity-only capsule) - no account files were placed and no guest file is touched; v5.9 behaviour
+settings_put_rc=0
+android_id_AFTER_apply=1949761e11e63f9c
+marker_AFTER_apply (/data/local/tmp/phonevault-marker.txt)=pv1-20261110022531-6ce47faa (expected: pv1-20261110022531-6ce47faa)
+-rw-r--r-- 1 runner runner 1365018 Nov 19 16:59 .pv-screencap.png
+wake part 1 complete - the guest stays BOOTED; part 2 reboots it and judges survival; handoff in .pv-evidence/pv40-wake-state.txt
+WAKE_STATE=PENDING
+CID=1949761e11e63f9c
+CTOKEN=pv1-20261110022531-6ce47faa
+CMPATH=/data/local/tmp/phonevault-marker.txt
+CCAPSHA=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949
+CMD5=5f9d29b51d7428a936a5a7f74b2a11f1
+CBORN=2026-11-10T02:24:13Z
+CSES=17
+CSENT=planted
+CPOST=unpatched
+CACCT=absent
+PRE_ID=4fe17cae24402135
+POST_ID=1949761e11e63f9c
+POST_MARKER=pv1-20261110022531-6ce47faa
+
+########## .pv-evidence-final/07b1-seat.txt ##########
+===== 07b1 seat app side-load (v6.4): ONE extra app installed BEFORE the live window opens, so the seating target can be fetched inside the window =====
+-- seat app: Aurora Store 4.8.4 (versionCode 76), F-Droid repo build - the sha256 pin is the hash in F-Droid's signed repo index (index-v2) for this exact file, desk-verified 2026-11-14 (job #13); the download is verified BEFORE install and a mismatch is skipped, never installed (the step-15 manifest discipline, one app, before the window); the outcome never touches the identity verdict --
+                                 Dload  Upload  Total   Spent   Left   Speed
+  0      0   0      0   0      0      0      0                              0  1  8.92M   1 159.6k   0      0 158.4k      0   00:57   00:01   00:56 159.1k100  8.92M 100  8.92M   0      0  4.70M      0   00:01   00:01         159.1k100  8.92M 100  8.92M   0      0  4.70M      0   00:01   00:01         159.1k100  8.92M 100  8.92M   0      0  4.70M      0   00:01   00:01         159.1k
+seat download hash verified: sha256=fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11 matches the F-Droid index pin
+Performing Streamed Install
+Success
+adb_install_rc=0 (aurora-store-4.8.4.apk)
+SEAT: INSTALLED com.aurora.store (aurora-store-4.8.4.apk sha256=fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11) - present BEFORE the live window opens
+
+########## .pv-evidence-final/07b2-live-egress.txt ##########
+===== 07b2 production WAKE live window + steady egress (v5.1) =====
+-- steady egress (input egress=steady) --
+-- WebShare pinned direct proxy - authorize this runner IP host-side --
+runner public ip: 52.240.173.185
+ip authorization list: http=200
+deleted stale ip authorization id=16301719 http=204 (204 = deleted)
+ip authorization create: http=201
+{"id":16301844,"ip_address":"52.240.173.185","created_at":"2026-11-19T16:59:43.793521Z","last_used_at":null} <- create response (truncated)
+pre-check: endpoint host='198.23.243.226' port='6361' (host/port only)
+pre-check: host is a numeric IP - no DNS lookup needed
+pre-check: TCP connect 198.23.243.226:6361 OK
+host probe: egress='<no answer>' expected='198.23.243.226' (diagnostics: curl_exit=7 http=000; curl said: curl: (7) CONNECT tunnel failed, response 402)
+host probe failed/mismatch - guest proxy NOT set; WARP next
+-- WARP fallback --
+warp install/connect rc=0 (attempt 1; log tail:)
+Success
+Status update: Disconnected
+Reason: Manual Disconnection
+cloudflare trace after WARP: warp=on
+EGRESS: WARP (unsteady fallback - a shared Cloudflare pool IP near the runner region; steadiness degraded by design, Lane 2 grade D)
+-- live view --
+live window: 60 min
+/home/runner/work/cloud-android-probe/cloud-android-probe/.pv-liveview/cloudflared: OK
+cloudflared version 2026.10.7 (built 2026-10-30-17:05 UTC)
+per-run token generated
+slideshow server started (pid 5142)
+ws-scrcpy install failed - slideshow carries (npm log:)
+npm error path /home/runner/work/cloud-android-probe/cloud-android-probe/.pv-liveview/wss/node_modules/wrtc
+npm error command failed
+npm error command sh -c node scripts/download-prebuilt.js
+npm error /bin/sh: 1: node-pre-gyp: not found
+npm error A complete log of this run can be found in: /home/runner/.npm/_logs/2026-11-19T17_00_51_365Z-debug-0.log
+gate self-test: 404
+live health OK (poll 1)
+live public poll 1: http=000
+live public poll 2: http=000
+live public poll 3: http=000
+live public poll 4: http=200
+LIVE: url=https://extensive-centuries-ward-perform.trycloudflare.com/sYAHQaeZJtPlzMs3EBWNAFMu0PdMiWGhzzRx-sKOoGo/ token=sYAHQaeZJtPlzMs3EBWNAFMu0PdMiWGhzzRx-sKOoGo mode=slideshow window=60min expires=end of this live window (the tunnel is killed in this step) fallback=https://extensive-centuries-ward-perform.trycloudflare.com/sYAHQaeZJtPlzMs3EBWNAFMu0PdMiWGhzzRx-sKOoGo/fallback/ control=tap + buttons + text on the page
+LIVE PUBLISH: live link published to branch phonevault-live (live-now.txt) - readable during the window from that branch's raw live-now.txt
+LIVE: window complete (60 min)
+LIVE PUBLISH: tombstone published to branch phonevault-live (window closed 2026-11-19T18:02:34Z)
+live view processes stopped
+
+########## .pv-evidence-final/07c-wake2.txt ##########
+===== 7c production WAKE part 2 (v4.3): app side-load, second reboot, identity verdict, state re-pack =====
+lineage posture carried into the outgoing certificate: userdata_posture=unpatched (read from the restored pack's certificate via part 1; the outgoing pack must seal the SAME value or the next wake would patch-or-skip on a lie)
+wake handoff read: android_id=1949761e11e63f9c marker_token=pv1-20261110022531-6ce47faa marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 session=17 born_utc=2026-11-10T02:24:13Z control_pre_apply_id=4fe17cae24402135 post_apply_id=1949761e11e63f9c
+-- DATA-PERSIST SELF-TEST (v5.9): sentinel planted in the guest at a fixed /data path by the PREVIOUS run's pack phase; read BEFORE any app install in this verdict phase. YES = /data content crossed the wake; NO = /data was re-initialised (only the identity capsule carried); UNGRADED = the restored pack predates the sentinel writer --
+DATA_PERSIST: NO (the restored session-17 pack planted a sentinel, but /data/local/tmp/pv-datapersist-sentinel.txt is absent or stale on this boot - /data was re-initialised on this wake; only the identity capsule carried over; raw read: '<missing/empty>')
+-- V60 PRODUCTION POSTURE CHECK + ACCOUNT STATE: the guest's crypto state, its governing fstab /data line, and the account list AMS serves - all read after capsule apply + the survival reboot, before any app install in this run --
+POSTURE CHECK (guest): ro.crypto.state=encrypted ro.crypto.type=file
+POSTURE CHECK (guest): vendor fstab /data line: /dev/block/vdc   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount
+ACCOUNT_STATE: 0 account(s) listed by AMS after capsule apply + reboot 2 (no expectation carried - the restored pack's capsule_accounts is not planted)
+-- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --
+apps manifest in use: phonevault/apps/apps.txt
+APP: ABSENT-BEFORE-INSTALL org.fdroid.fdroid - not present at the start of this wake
+hash verified for F-Droid.apk: sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52 matches the manifest
+Performing Streamed Install
+Success
+adb_install_rc=0 (F-Droid.apk)
+APP: INSTALLED org.fdroid.fdroid (F-Droid.apk sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52)
+## Network stats: elapsed time=61ms (0ms mobile, 0ms wifi, 61ms not connected)
+-rw-r--r-- 1 runner runner 77814 Nov 19 18:02 .pv-screencap.png
+-- SECOND reboot (plain guest reboot): the run No.19 standard - a wake counts only if the applied identity survives it --
+reboot_rc=0
+wait_for_device_rc=0
+reboot poll 1: sys.boot_completed=''
+reboot poll 2: sys.boot_completed='1'
+reboot_wait_result: sys.boot_completed=1 reached
+android_id_AFTER_reboot2=1949761e11e63f9c
+marker_AFTER_reboot2 (/data/local/tmp/phonevault-marker.txt)=pv1-20261110022531-6ce47faa
+APP: SURVIVED reboot 2 - org.fdroid.fdroid still installed after the survival reboot
+-- DATA-PERSIST SELF-TEST (v5.9): planting the sentinel the NEXT wake will grade (fixed /data path; written while the guest is still up, before the graceful stop, so it rides this run's re-pack) --
+sentinel_write_rc=0
+sentinel readback: 'pv-datapersist session=18 planted_utc=2026-11-19T18:03:22Z run_id=44566569096'
+sentinel planted for session 18 (the outgoing pack's certificate will carry datapersist_sentinel=planted)
+-- V60 PRODUCTION ACCOUNT PHASE (FINAL, job #8): re-capture the EXTENDED identity capsule (identity files + accounts_de.db + accounts_ce.db as an atomic pair + sync/accounts.xml + the whole GSF dir + the whole GMS dir; the keystore is NOT carried - CAPSULE-ACCOUNT-DESIGN.md section 6) on EVERY successful wake, because GMS refreshes authtokens during the live window - a birth-frozen capsule would seal stale tokens. The mechanism this production form carries was proven live on the v60-test lineage (grading wake 43602751221: the account sealed into the capsule was listed by AMS after capsule apply + reboot 2). Three proven pieces, folded in by the r8-r11 deltas: (1) CAPTURE = the r9 adb-root-pull primitive with a host paircheck gate (this step inherits NO root state - adbd root from wake part 1 does not survive reboot 2 - so root is re-established and verified uid=0 in-step before any account read; the earlier snapshot/stop capture designs were removed after failing live and are NOT in this phase); (2) ASSEMBLY = the r11 MERGE construction - the extended capsule is built on top of the phone's incoming capsule, never from a fresh staging tree, with the r10 guest source facts printed at assembly and the GSF/GMS dirs staged by the guest root tar; (3) CHECK = the full table in its STRICT production form: every expected item printed with present/absent AND origin, ALL missing required items collected and named at once, and NO documented-absence exception - on an enrolled production guest sync/accounts.xml, the GSF dir, gservices.db and the GMS dir are all definitionally present, so an absent source is itself a seal failure. Any failure keeps the previous capsule byte-unchanged and seals capsule_accounts=absent - never a false plant; planted seals only for a verified capture holding >= 1 real account --
+-- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 test phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --
+adb_root_rc=0
+account capture root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
+ACCOUNT CAPTURE: adb root verified (uid=0 shell in this step)
+keystore probe (facts for the keystore question; the keystore is NOT carried by this capsule):
+persistent.sqlite
+timestamp
+vpnprofilestore.sqlite
+gms/gsf guest sizes:
+44	/data/data/com.google.android.gms
+1	/data/data/com.google.android.gsf
+/data/system_de/0/accounts_de.db 1000 1000 660
+/data/system_ce/0/accounts_ce.db 1000 1000 660
+stat: '/data/system/sync/accounts.xml': No such file or directory
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  40960 2026-11-19 16:59 /data/system_ce/0/accounts_ce.db
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  65536 2026-11-19 16:59 /data/system_de/0/accounts_de.db
+-- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). No framework stop and no guest-side snapshot open exist anywhere in this phase. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present) and /data/system/sync/accounts.xml when present; the GSF/GMS whole dirs enter at assembly below via a guest root tar of the source paths (a plain tree pull does not preserve uid/gid/mode; the root tar does - the identity capsule's own tree method). The host paircheck (the production verifier above: sqlite integrity_check on both files + DE/CE (id,name,type) identity) is the gate - a torn or inconsistent pull fails the check and is re-pulled, never sealed; consistency is checked, not assumed from a quiesce. Capture runs on an idle, settled guest (post-verdict, no enrolment in flight in this step) --
+-- adb-root pull attempt 1 of 3 --
+/data/system_de/0/accounts_de.db: 1 file pulled, 0 skipped. 0.6 MB/s (65536 bytes in 0.107s)
+/data/system_ce/0/accounts_ce.db: 1 file pulled, 0 skipped. 0.3 MB/s (40960 bytes in 0.121s)
+sync/accounts.xml: absent on this guest at capture (the strict table below treats this as a seal failure on an enrolled production guest)
+PVACC integrity de: ok
+PVACC integrity ce: ok
+PVACC de accounts: 0 ce accounts: 0
+PVACC_RESULT: VERIFY_OK
+ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt 1, paircheck OK - integrity ok on both DBs, DE/CE (id,name,type) rows identical)
+ACCOUNT CAPTURE: verified via adb-root-pull on attempt 1 (the DB copies in pv-acct passed host paircheck; 0 account(s) in the captured DBs; sync/accounts.xml: absent)
+-- capture normalisation (production-only refinement, design section 16): fold any -wal content of the pulled host copies into the main DB files and drop the journal siblings, so the copies the assembly stages are standalone-complete. On the test lineage this fold happened inside the plant tool; production has no plant, so it happens here, on the verified copies, before assembly. Without it, a main-file-only overlay could strand un-checkpointed account rows in a journal that does not ride the capsule --
+PVACCNORM pv-acct/accounts_de.db journal_mode=delete integrity=ok
+PVACCNORM pv-acct/accounts_ce.db journal_mode=delete integrity=ok
+-- capsule assembly (r11 MERGE construction, production form): the extended capsule is assembled ON TOP OF THE INCOMING CAPSULE, not rebuilt from a fresh staging tree. The incoming capsule is /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar on this host: wake part 1 extracted the verified pinned pack into the hand-made AVD folder, gate-verified this file's sha256 against the certificate's capsule_sha256 BEFORE boot, and pushed it from exactly this path for the capsule apply - so at this point in the wake it is still the incoming capsule (this phase overwrites it only on the success path below), and its extracted form IS retained; no re-extraction from the pack is needed. The phase pushes it to the guest and extracts it as root into the staging tree FIRST (the tar records uid/gid/mode; the root extract restores them), so settings_secure.xml + the marker are present BY CONSTRUCTION. Overlays then land on that base by path: the paircheck-verified DB copies (staging paths only, canonical recorded uid/gid/mode - they never touch the canonical DB paths in this design), sync/accounts.xml when captured, and the GSF/GMS whole dirs via the guest root tar. On later wakes the merge base is the previous wake's EXTENDED capsule, so the overlay refreshes the account set by path while identity and previously carried files persist by construction - exactly the permanence semantics the role needs. The copy is live; the DB pair - the sealed content - is the paircheck-verified pull --
+ACCOUNT ASSEMBLY INCOMING CAPSULE: /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949 (gate-verified against the certificate in wake part 1; this listing is the merge base and the origin evidence for the identity rows of the strict table):
+data/system/users/0/settings_secure.xml
+data/local/tmp/phonevault-marker.txt
+/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 101.2 MB/s (14336 bytes in 0.000s)
+incoming_capsule_push_rc=0
+-- account assembly source facts (r10, guest ls as root):
+drwx--x--x 23 u0_a128 u0_a128 4096 2026-11-19 18:00 /data/data/com.google.android.gms
+drwx------  7 u0_a128 u0_a128 4096 2026-11-19 16:59 /data/data/com.google.android.gsf
+1	/data/data/com.google.android.gsf
+44	/data/data/com.google.android.gms
+ACCOUNT ASSEMBLY SOURCE FACT: gsf=present gms=present (guest /data/data dirs as root; production strict form: on an enrolled guest BOTH dirs are required - a source fact of absent is itself a seal failure, collected by the strict table below)
+pv_base_extract_rc=0
+-rw-rw-rw- 1 root   root      28 2026-11-10 02:25 /data/local/tmp/pv-capstage/data/local/tmp/phonevault-marker.txt
+-rw------- 1 system system 11280 2026-11-10 02:25 /data/local/tmp/pv-capstage/data/system/users/0/settings_secure.xml
+pv-acct/accounts_de.db: 1 file pushed, 0 skipped. 0.9 MB/s (65536 bytes in 0.071s)
+pv-acct/accounts_ce.db: 1 file pushed, 0 skipped. 284.5 MB/s (40960 bytes in 0.000s)
+-rw-rw---- 1 system system u:object_r:shell_data_file:s0  40960 2026-11-19 18:03 /data/local/tmp/pv-capstage/data/system_ce/0/accounts_ce.db
+-rw-rw---- 1 system system u:object_r:shell_data_file:s0  65536 2026-11-19 18:03 /data/local/tmp/pv-capstage/data/system_de/0/accounts_de.db
+-- account assembly dirs tar (r10): guest root tar of the present source dirs, extracted into the staging tree ON TOP OF the capsule base (the tar records uid/gid/mode; the root extract restores them; an explicitly named source dir yields at least its directory entry, so a present-but-empty dir still lands in the staging tree and in the capsule tar) --
+pv_dirs_tar_rc=0
+-rw-rw-rw- 1 root root 41112064 2026-11-19 18:03 /data/local/tmp/pv-dirs.tar
+pv_dirs_extract_rc=0
+-- account assembly staged result:
+com.google.android.gms
+com.google.android.gsf
+1	/data/local/tmp/pv-capstage/data/data/com.google.android.gsf
+44	/data/local/tmp/pv-capstage/data/data/com.google.android.gms
+extended_capsule_tar_rc=0
+/data/local/tmp/pv-capsule.tar: 1 file pulled, 0 skipped. 136.4 MB/s (41239040 bytes in 0.288s)
+PVACC integrity de: ok
+PVACC integrity ce: ok
+PVACC de accounts: 0 ce accounts: 0
+PVACC_RESULT: VERIFY_OK
+-- capsule manifest: written BEFORE the strict full-table check so the table can carry the manifest row; its identity values are the incoming capsule's own (CID/CTOKEN/CMPATH/CMD5 were read by wake part 1 from the pinned pack's certificate, whose capsule_sha256 gate-verified the merge base above) --
+ACCOUNT PHASE: outgoing manifest written (capsule_sha256=c87bac4aa6118acf35d4fe5d8751f6e0ac8001598ec0d37385a06041f16627e9)
+-- account capsule listings used by the strict table: the INCOMING listing (merge base) was printed at assembly; the MERGED listing follows (head -30):
+data/
+data/system/
+data/system/users/
+data/system/users/0/
+data/system/users/0/settings_secure.xml
+data/system/sync/
+data/local/
+data/local/tmp/
+data/local/tmp/phonevault-marker.txt
+data/system_de/
+data/system_de/0/
+data/system_de/0/accounts_de.db
+data/system_ce/
+data/system_ce/0/
+data/system_ce/0/accounts_ce.db
+data/data/
+data/data/com.google.android.gsf/
+data/data/com.google.android.gsf/cache/
+data/data/com.google.android.gsf/cache/oat_primary/
+data/data/com.google.android.gsf/cache/oat_primary/x86_64/
+data/data/com.google.android.gsf/cache/oat_primary/x86_64/GoogleServicesFramework.art
+data/data/com.google.android.gsf/code_cache/
+data/data/com.google.android.gsf/databases/
+data/data/com.google.android.gsf/databases/gservices.db
+data/data/com.google.android.gsf/databases/gservices.db-journal
+data/data/com.google.android.gsf/databases/googlesettings.db
+data/data/com.google.android.gsf/databases/googlesettings.db-journal
+data/data/com.google.android.gsf/files/
+data/data/com.google.android.gsf/files/profileInstalled
+data/data/com.google.android.gsf/files/security_token
+merged capsule listing: 808 entries in total
+ACCOUNT CAPSULE TABLE: settings_secure.xml | data/system/users/0/settings_secure.xml | PRESENT | origin: incoming-capsule
+ACCOUNT CAPSULE TABLE: phonevault-marker.txt | data/local/tmp/phonevault-marker.txt | PRESENT | origin: incoming-capsule
+ACCOUNT CAPSULE TABLE: accounts_de.db | data/system_de/0/accounts_de.db | PRESENT | origin: phase-staged
+ACCOUNT CAPSULE TABLE: accounts_ce.db | data/system_ce/0/accounts_ce.db | PRESENT | origin: phase-staged
+ACCOUNT CAPSULE TABLE: capsule-manifest.txt | pv-capsule-acct/capsule-manifest.txt (outgoing, beside the capsule tar) | PRESENT | origin: phase-staged (identity values carried from the incoming capsule)
+ACCOUNT CAPSULE TABLE: sync/accounts.xml | data/system/sync/accounts.xml | MISSING (absent at capture - on an enrolled production guest the sync state is part of the required account set; seal failure) | origin: phase-staged
+ACCOUNT CAPSULE TABLE: gsf-entries | data/data/com.google.android.gsf/ | PRESENT | origin: phase-staged
+ACCOUNT CAPSULE TABLE: gservices.db | databases/gservices.db | PRESENT | origin: phase-staged
+ACCOUNT CAPSULE TABLE: gms-entries | data/data/com.google.android.gms/ | PRESENT | origin: phase-staged
+ACCOUNT CAPSULE TABLE VERDICT: INCOMPLETE - missing required item(s): sync/accounts.xml
+ACCOUNT PHASE: FAILED - extended capsule merge incomplete - missing required item(s): sync/accounts.xml (the full table above lists every item at once; previous capsule kept, capsule_accounts=absent); the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent
+framework was never stopped in this run (capture primitive: adb-root-pull - no quiesce exists in this design) - no restart to perform or prove
+ACCOUNT CAPTURE CONTROL: 0 account(s) listed by AMS in this run after the re-capture (the live guest's account state was not disturbed by the capture)
+OK: killing emulator, bye bye
+OK
+emu_kill_rc=0
+shutdown poll 1: still alive: qemu-system present
+graceful stop confirmed at poll 2
+host sync done
+/dev/root        72G   56G   17G  78% /
+-- AVD folder listing BEFORE pack --
+total 1.4G
+-rw------- 1 runner runner    0 Nov 19 18:03 bootcompleted.ini
+-rw-r--r-- 1 runner runner  66M Nov 19 16:58 cache.img
+-rw-r--r-- 1 runner runner 193K Nov 19 16:58 cache.img.qcow2
+-rw-r--r-- 1 runner runner  310 Nov 10 02:25 capsule-manifest.txt
+-rw-r--r-- 1 runner runner 3.7K Nov 10 02:24 config.ini
+drwxr-xr-x 3 runner runner 4.0K Nov 19 16:58 data
+-rw-r--r-- 1 runner runner  282 Nov 19 16:58 emu-launch-params.txt
+-rw-r--r-- 1 runner runner  113 Nov 19 18:03 emulator-user.ini
+-rw------- 1 runner runner  18M Nov 10 02:24 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.9M Nov 19 18:03 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.2K Nov 19 16:58 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.8M Nov 19 16:58 initrd
+drwxr-xr-x 3 runner runner 4.0K Nov 19 16:59 modem_simulator
+-rw-r--r-- 1 runner runner    0 Nov 19 16:58 multiinstance.lock
+-rw-r--r-- 1 runner runner   38 Nov 19 16:58 netsim.ini
+-rw-r--r-- 1 runner runner 1.4K Nov 19 16:54 phonevault-version.txt
+-rw-r--r-- 1 runner runner  14K Nov 10 02:25 pv-capsule.tar
+-rw-r--r-- 1 runner runner    1 Nov 19 16:58 qemu-version.txt
+-rw-r--r-- 1 runner runner    0 Nov 19 16:58 read-snapshot.txt
+drwxr-xr-x 2 runner runner 4.0K Nov 19 18:03 tmpAdbCmds
+-rw------- 1 runner runner 6.2M Nov 10 02:24 userdata-qemu.img
+-rw-r--r-- 1 runner runner 1.4G Nov 19 18:03 userdata-qemu.img.qcow2
+-rw-r--r-- 1 runner runner    9 Nov 19 16:58 version_num.cache
+-- phonevault-version.txt (in pack) --
+avd_name=factoryphone
+system_image=system-images;android-34;google_apis;x86_64
+emulator_version=Android emulator version 37.2.13.0 (build_id 16740729) (CL:N/A)
+emulator_pkg_revision=37.2.13
+system_image_revision=14
+production=1
+session=18
+born_utc=2026-11-10T02:24:13Z
+packed_utc=2026-11-19T18:03:43Z
+android_id=1949761e11e63f9c
+marker_token=pv1-20261110022531-6ce47faa
+marker_ok=1
+marker_guest_path=/data/local/tmp/phonevault-marker.txt
+phone=one
+route=wake-v4.0
+identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)
+capsule_sha256=5e694b2d33505b5394f968487a0e3be781ab9f2c9d0209dbac2999bdc67ef949
+settings_secure_md5_birth=5f9d29b51d7428a936a5a7f74b2a11f1
+datapersist_sentinel=planted
+userdata_posture=unpatched
+capsule_accounts=absent
+largest_userdata_file=userdata-qemu.img.qcow2
+largest_userdata_size_bytes=1417150464
+largest_userdata_sha256=97b529e8ec45cb02cb3ef96bf2461b74b71d458c6b902954bac9818f8aa9525f
+packed_file: userdata-qemu.img.qcow2 1417150464 bytes
+packed_file: userdata-qemu.img 6488064 bytes
+packed_file: encryptionkey.img.qcow2 1966080 bytes
+packed_file: encryptionkey.img 18874368 bytes
+packed_file: config.ini 3783 bytes
+packed_file: emulator-user.ini 113 bytes
+packed_file: hardware-qemu.ini 4211 bytes
+packed_file: pv-capsule.tar 14336 bytes
+packed_file: capsule-manifest.txt 310 bytes
+packed_file: phonevault-version.txt (this file)
 pack set: userdata-qemu.img.qcow2 userdata-qemu.img encryptionkey.img.qcow2 encryptionkey.img config.ini emulator-user.ini hardware-qemu.ini pv-capsule.tar capsule-manifest.txt phonevault-version.txt
 excluded by construction (never in the candidate list): cache.img, cache.img.qcow2, snapshots/, *.lock
 tar_rc=0
--rw-r--r-- 1 runner runner 1.5G Nov 19 16:54 phonevault-state.tar
-seal check: sha256(userdata-qemu.img.qcow2) recomputed FROM the finished tar=fdd6a10ae83c2926ac04082c0a3480b83ae1d545466b567b5973b24f2b756e52 vs certificate=fdd6a10ae83c2926ac04082c0a3480b83ae1d545466b567b5973b24f2b756e52
+-rw-r--r-- 1 runner runner 1.4G Nov 19 18:03 phonevault-state.tar
+seal check: sha256(userdata-qemu.img.qcow2) recomputed FROM the finished tar=97b529e8ec45cb02cb3ef96bf2461b74b71d458c6b902954bac9818f8aa9525f vs certificate=97b529e8ec45cb02cb3ef96bf2461b74b71d458c6b902954bac9818f8aa9525f
 PACK_OK=1 - production pack phonevault-state.tar complete (tar_rc=0, seal verified from the tar)
-pack_sha256=74de6ad4bc0a7d48d0a263e63fbf042a7ef79646434a605057cae06f5c8af44e
-WAKE: SAME PHONE - capsule android_id 1949761e11e63f9c re-applied by root after the disk restore (the wake boot had woken as d49b3aec3eee67bc) and SURVIVED the extra reboot; marker restored from /data/local/tmp/phonevault-marker.txt and survived; state RE-PACKED as session 17 with the same capsule and uploaded as the new phonevault-avd-state (pack_sha256=74de6ad4bc0a7d48d0a263e63fbf042a7ef79646434a605057cae06f5c8af44e) - the NEXT wake pins THIS run
+pack_sha256=cc908c5d629356537da7fefdbde5fa65137292a234a674d8697ccd80ea60df55
+WAKE: SAME PHONE - capsule android_id 1949761e11e63f9c re-applied by root after the disk restore (the wake boot had woken as 4fe17cae24402135) and SURVIVED the extra reboot; marker restored from /data/local/tmp/phonevault-marker.txt and survived; state RE-PACKED as session 18 with the same capsule and uploaded as the new phonevault-avd-state (pack_sha256=cc908c5d629356537da7fefdbde5fa65137292a234a674d8697ccd80ea60df55) - the NEXT wake pins THIS run
 
 ########## .pv-evidence-final/07d-vault.txt ##########
 ===== 7d vault store (v5.4): pack -> the phone's own HF vault dataset, directly from this runner =====
@@ -600,833 +601,603 @@ vault_repo=jasveerai92/phonevault-one phone=one
 Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
 New Data Upload               : |          |  0.00B /  0.00B            [A
 
-  ...robe/phonevault-state.tar:   0%|          | 5.31MB / 1.51GB            [A[A
+  ...robe/phonevault-state.tar:   0%|          | 1.60MB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:   0%|          | 5.31MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   0%|          | 5.31MB / 1.51GB,  516kB/s  
-New Data Upload               :   3%|▎         | 5.31MB /  201MB,  516kB/s  [A
+  ...robe/phonevault-state.tar:   0%|          | 1.60MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   0%|          | 1.60MB / 1.44GB,  158kB/s  
+New Data Upload               :   1%|          | 1.60MB /  201MB,  158kB/s  [A
 
-  ...robe/phonevault-state.tar:   1%|          | 7.96MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   1%|          | 7.96MB / 1.51GB,  767kB/s  
-New Data Upload               :   4%|▍         | 7.96MB /  201MB,  767kB/s  [A
+  ...robe/phonevault-state.tar:   0%|          | 4.77MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   0%|          | 4.77MB / 1.44GB,  469kB/s  
+New Data Upload               :   2%|▏         | 4.77MB /  201MB,  469kB/s  [A
 
-  ...robe/phonevault-state.tar:   1%|          | 13.8MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   1%|          | 13.8MB / 1.51GB, 1.32MB/s  
-New Data Upload               :   7%|▋         | 13.8MB /  201MB, 1.32MB/s  [A
+  ...robe/phonevault-state.tar:   1%|          | 11.7MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   1%|          | 11.7MB / 1.44GB, 1.14MB/s  
+New Data Upload               :   6%|▌         | 11.7MB /  201MB, 1.14MB/s  [A
 
-  ...robe/phonevault-state.tar:   1%|          | 18.6MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   1%|          | 18.6MB / 1.51GB, 1.77MB/s  
-New Data Upload               :   9%|▉         | 18.6MB /  201MB, 1.77MB/s  [A
+  ...robe/phonevault-state.tar:   1%|▏         | 18.6MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   1%|▏         | 18.6MB / 1.44GB, 1.81MB/s  
+New Data Upload               :   9%|▉         | 18.6MB /  201MB, 1.81MB/s  [A
 
-  ...robe/phonevault-state.tar:   2%|▏         | 25.0MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   2%|▏         | 25.0MB / 1.51GB, 2.37MB/s  
-New Data Upload               :  12%|█▏        | 25.0MB /  201MB, 2.37MB/s  [A
+  ...robe/phonevault-state.tar:   2%|▏         | 26.0MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   2%|▏         | 26.0MB / 1.44GB, 2.51MB/s  
+New Data Upload               :  13%|█▎        | 26.0MB /  201MB, 2.51MB/s  [A
 
-  ...robe/phonevault-state.tar:   2%|▏         | 32.4MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   2%|▏         | 32.4MB / 1.51GB, 3.05MB/s  
-New Data Upload               :  16%|█▌        | 32.4MB /  201MB, 3.05MB/s  [A
+  ...robe/phonevault-state.tar:   2%|▏         | 33.9MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   2%|▏         | 33.9MB / 1.44GB, 3.26MB/s  
+New Data Upload               :  17%|█▋        | 33.9MB /  201MB, 3.26MB/s  [A
 
-  ...robe/phonevault-state.tar:   3%|▎         | 40.3MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   3%|▎         | 40.3MB / 1.51GB, 3.78MB/s  
-New Data Upload               :  20%|██        | 40.3MB /  201MB, 3.78MB/s  [A
+  ...robe/phonevault-state.tar:   3%|▎         | 41.4MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   3%|▎         | 41.4MB / 1.44GB, 3.95MB/s  
+New Data Upload               :  21%|██        | 41.4MB /  201MB, 3.95MB/s  [A
 
-  ...robe/phonevault-state.tar:   3%|▎         | 48.3MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   3%|▎         | 48.3MB / 1.51GB, 4.50MB/s  
-New Data Upload               :  24%|██▍       | 48.3MB /  201MB, 4.50MB/s  [A
+  ...robe/phonevault-state.tar:   3%|▎         | 48.3MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   3%|▎         | 48.3MB / 1.44GB, 4.58MB/s  
+New Data Upload               :  24%|██▍       | 48.3MB /  201MB, 4.58MB/s  [A
 
-  ...robe/phonevault-state.tar:   4%|▎         | 54.6MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   4%|▎         | 54.6MB / 1.51GB, 5.06MB/s  
-New Data Upload               :  27%|██▋       | 54.6MB /  201MB, 5.06MB/s  [A
+  ...robe/phonevault-state.tar:   4%|▍         | 58.3MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   4%|▍         | 58.3MB / 1.44GB, 5.51MB/s  
+New Data Upload               :  29%|██▉       | 58.3MB /  201MB, 5.51MB/s  [A
 
-  ...robe/phonevault-state.tar:   4%|▍         | 63.1MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   4%|▍         | 63.1MB / 1.51GB, 5.82MB/s  
-New Data Upload               :  31%|███▏      | 63.1MB /  201MB, 5.82MB/s  [A
+  ...robe/phonevault-state.tar:   5%|▍         | 67.9MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   5%|▍         | 67.9MB / 1.44GB, 6.37MB/s  
+New Data Upload               :  34%|███▎      | 67.9MB /  201MB, 6.37MB/s  [A
 
-  ...robe/phonevault-state.tar:   5%|▍         | 70.5MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   5%|▍         | 70.5MB / 1.51GB, 6.47MB/s  
-New Data Upload               :  35%|███▌      | 70.5MB /  201MB, 6.47MB/s  [A
+  ...robe/phonevault-state.tar:   5%|▌         | 76.9MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   5%|▌         | 76.9MB / 1.44GB, 7.17MB/s  
+New Data Upload               :  38%|███▊      | 76.9MB /  201MB, 7.17MB/s  [A
 
-  ...robe/phonevault-state.tar:   5%|▌         | 75.8MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   5%|▌         | 75.8MB / 1.51GB, 6.90MB/s  
-New Data Upload               :  38%|███▊      | 75.8MB /  201MB, 6.90MB/s  [A
+  ...robe/phonevault-state.tar:   6%|▌         | 86.9MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   6%|▌         | 86.9MB / 1.44GB, 8.07MB/s  
+New Data Upload               :  43%|████▎     | 86.9MB /  201MB, 8.07MB/s  [A
 
-  ...robe/phonevault-state.tar:   6%|▌         | 83.3MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   6%|▌         | 83.3MB / 1.51GB, 7.54MB/s  
-New Data Upload               :  41%|████▏     | 83.3MB /  201MB, 7.54MB/s  [A
+  ...robe/phonevault-state.tar:   6%|▋         | 92.7MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   6%|▋         | 92.7MB / 1.44GB, 8.55MB/s  
+New Data Upload               :  46%|████▌     | 92.7MB /  201MB, 8.55MB/s  [A
 
-  ...robe/phonevault-state.tar:   6%|▌         | 85.4MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   6%|▌         | 85.4MB / 1.51GB, 7.66MB/s  
-New Data Upload               :  42%|████▏     | 85.4MB /  201MB, 7.66MB/s  [A
+  ...robe/phonevault-state.tar:   7%|▋         |  103MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   7%|▋         |  103MB / 1.44GB, 9.41MB/s  
+New Data Upload               :  51%|█████     |  103MB /  201MB, 9.41MB/s  [A
 
-  ...robe/phonevault-state.tar:   6%|▌         | 88.0MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   6%|▌         | 88.0MB / 1.51GB, 7.83MB/s  
-New Data Upload               :  44%|████▍     | 88.0MB /  201MB, 7.83MB/s  [A
+  ...robe/phonevault-state.tar:   8%|▊         |  111MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  111MB / 1.44GB, 10.1MB/s  
+New Data Upload               :  41%|████      |  111MB /  268MB, 10.1MB/s  [A
 
-  ...robe/phonevault-state.tar:   6%|▌         | 92.8MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   6%|▌         | 92.8MB / 1.51GB, 8.20MB/s  
-New Data Upload               :  35%|███▍      | 92.8MB /  268MB, 8.20MB/s  [A
+  ...robe/phonevault-state.tar:   8%|▊         |  122MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  122MB / 1.44GB, 11.1MB/s  
+New Data Upload               :  46%|████▌     |  122MB /  268MB, 11.1MB/s  [A
 
-  ...robe/phonevault-state.tar:   6%|▋         | 97.5MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   6%|▋         | 97.5MB / 1.51GB, 8.57MB/s  
-New Data Upload               :  36%|███▋      | 97.5MB /  268MB, 8.57MB/s  [A
+  ...robe/phonevault-state.tar:   9%|▉         |  133MB / 1.44GB            [A[AProcessing Files (0 / 1)      :   9%|▉         |  133MB / 1.44GB, 12.0MB/s  
+New Data Upload               :  49%|████▉     |  133MB /  268MB, 12.0MB/s  [A
 
-  ...robe/phonevault-state.tar:   7%|▋         |  105MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   7%|▋         |  105MB / 1.51GB, 9.23MB/s  
-New Data Upload               :  39%|███▉      |  105MB /  268MB, 9.23MB/s  [A
+  ...robe/phonevault-state.tar:  10%|▉         |  143MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  10%|▉         |  143MB / 1.44GB, 12.8MB/s  
+New Data Upload               :  53%|█████▎    |  143MB /  268MB, 12.8MB/s  [A
 
-  ...robe/phonevault-state.tar:   7%|▋         |  112MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   7%|▋         |  112MB / 1.51GB, 9.73MB/s  
-New Data Upload               :  42%|████▏     |  112MB /  268MB, 9.73MB/s  [A
+  ...robe/phonevault-state.tar:  10%|█         |  152MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  10%|█         |  152MB / 1.44GB, 13.5MB/s  
+New Data Upload               :  57%|█████▋    |  152MB /  268MB, 13.5MB/s  [A
 
-  ...robe/phonevault-state.tar:   8%|▊         |  117MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  117MB / 1.51GB, 10.1MB/s  
-New Data Upload               :  44%|████▎     |  117MB /  268MB, 10.1MB/s  [A
+  ...robe/phonevault-state.tar:  11%|█         |  159MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  11%|█         |  159MB / 1.44GB, 14.1MB/s  
+New Data Upload               :  59%|█████▉    |  159MB /  268MB, 14.1MB/s  [A
 
-  ...robe/phonevault-state.tar:   8%|▊         |  120MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  120MB / 1.51GB, 10.3MB/s  
-New Data Upload               :  45%|████▍     |  120MB /  268MB, 10.3MB/s  [A
+  ...robe/phonevault-state.tar:  12%|█▏        |  169MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  12%|█▏        |  169MB / 1.44GB, 14.9MB/s  
+New Data Upload               :  63%|██████▎   |  169MB /  268MB, 14.9MB/s  [A
 
-  ...robe/phonevault-state.tar:   8%|▊         |  124MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  124MB / 1.51GB, 10.6MB/s  
-New Data Upload               :  46%|████▋     |  124MB /  268MB, 10.6MB/s  [A
+  ...robe/phonevault-state.tar:  12%|█▏        |  178MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  12%|█▏        |  178MB / 1.44GB, 15.6MB/s  
+New Data Upload               :  66%|██████▋   |  178MB /  268MB, 15.6MB/s  [A
 
-  ...robe/phonevault-state.tar:   8%|▊         |  127MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  127MB / 1.51GB, 10.7MB/s  
-New Data Upload               :  47%|████▋     |  127MB /  268MB, 10.7MB/s  [A
+  ...robe/phonevault-state.tar:  13%|█▎        |  184MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  13%|█▎        |  184MB / 1.44GB, 16.0MB/s  
+New Data Upload               :  55%|█████▍    |  184MB /  335MB, 16.0MB/s  [A
 
-  ...robe/phonevault-state.tar:   9%|▊         |  131MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   9%|▊         |  131MB / 1.51GB, 11.1MB/s  
-New Data Upload               :  39%|███▉      |  131MB /  335MB, 11.1MB/s  [A
+  ...robe/phonevault-state.tar:  13%|█▎        |  191MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  13%|█▎        |  191MB / 1.44GB, 16.5MB/s  
+New Data Upload               :  57%|█████▋    |  191MB /  335MB, 16.5MB/s  [A
 
-  ...robe/phonevault-state.tar:   9%|▉         |  134MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   9%|▉         |  134MB / 1.51GB, 11.2MB/s  
-New Data Upload               :  40%|████      |  134MB /  335MB, 11.2MB/s  [A
+  ...robe/phonevault-state.tar:  14%|█▍        |  199MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  14%|█▍        |  199MB / 1.44GB, 17.0MB/s  
+New Data Upload               :  59%|█████▉    |  199MB /  335MB, 17.0MB/s  [A
 
-  ...robe/phonevault-state.tar:   9%|▉         |  139MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   9%|▉         |  139MB / 1.51GB, 11.5MB/s  
-New Data Upload               :  41%|████▏     |  139MB /  335MB, 11.5MB/s  [A
+  ...robe/phonevault-state.tar:  14%|█▍        |  206MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  14%|█▍        |  206MB / 1.44GB, 17.5MB/s  
+New Data Upload               :  61%|██████▏   |  206MB /  335MB, 17.5MB/s  [A
 
-  ...robe/phonevault-state.tar:   9%|▉         |  141MB / 1.51GB            [A[AProcessing Files (0 / 1)      :   9%|▉         |  141MB / 1.51GB, 11.6MB/s  
-New Data Upload               :  42%|████▏     |  141MB /  335MB, 11.6MB/s  [A
+  ...robe/phonevault-state.tar:  15%|█▍        |  211MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  15%|█▍        |  211MB / 1.44GB, 17.9MB/s  
+New Data Upload               :  53%|█████▎    |  211MB /  402MB, 17.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  10%|▉         |  147MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  10%|▉         |  147MB / 1.51GB, 12.0MB/s  
-New Data Upload               :  44%|████▍     |  147MB /  335MB, 12.0MB/s  [A
+  ...robe/phonevault-state.tar:  15%|█▌        |  217MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  15%|█▌        |  217MB / 1.44GB, 18.3MB/s  
+New Data Upload               :  54%|█████▍    |  217MB /  402MB, 18.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  10%|▉         |  149MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  10%|▉         |  149MB / 1.51GB, 12.1MB/s  
-New Data Upload               :  37%|███▋      |  149MB /  402MB, 12.1MB/s  [A
+  ...robe/phonevault-state.tar:  16%|█▌        |  224MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  16%|█▌        |  224MB / 1.44GB, 18.7MB/s  
+New Data Upload               :  56%|█████▌    |  224MB /  402MB, 18.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  10%|█         |  153MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  10%|█         |  153MB / 1.51GB, 12.4MB/s  
-New Data Upload               :  38%|███▊      |  153MB /  402MB, 12.4MB/s  [A
+  ...robe/phonevault-state.tar:  16%|█▌        |  229MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  16%|█▌        |  229MB / 1.44GB, 19.0MB/s  
+New Data Upload               :  49%|████▉     |  229MB /  469MB, 19.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  10%|█         |  156MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  10%|█         |  156MB / 1.51GB, 12.5MB/s  
-New Data Upload               :  39%|███▉      |  156MB /  402MB, 12.5MB/s  [A
+  ...robe/phonevault-state.tar:  16%|█▋        |  236MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  16%|█▋        |  236MB / 1.44GB, 19.5MB/s  
+New Data Upload               :  50%|█████     |  236MB /  469MB, 19.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  11%|█         |  159MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  11%|█         |  159MB / 1.51GB, 12.7MB/s  
-New Data Upload               :  40%|███▉      |  159MB /  402MB, 12.7MB/s  [A
+  ...robe/phonevault-state.tar:  17%|█▋        |  243MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  17%|█▋        |  243MB / 1.44GB, 19.9MB/s  
+New Data Upload               :  52%|█████▏    |  243MB /  469MB, 19.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  11%|█         |  164MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  11%|█         |  164MB / 1.51GB, 13.0MB/s  
-New Data Upload               :  35%|███▍      |  164MB /  469MB, 13.0MB/s  [A
+  ...robe/phonevault-state.tar:  17%|█▋        |  250MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  17%|█▋        |  250MB / 1.44GB, 20.4MB/s  
+New Data Upload               :  53%|█████▎    |  250MB /  469MB, 20.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  11%|█         |  167MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  11%|█         |  167MB / 1.51GB, 13.1MB/s  
-New Data Upload               :  36%|███▌      |  167MB /  469MB, 13.1MB/s  [A
+  ...robe/phonevault-state.tar:  18%|█▊        |  257MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  18%|█▊        |  257MB / 1.44GB, 20.9MB/s  
+New Data Upload               :  48%|████▊     |  257MB /  536MB, 20.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  11%|█▏        |  174MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  11%|█▏        |  174MB / 1.51GB, 13.6MB/s  
-New Data Upload               :  37%|███▋      |  174MB /  469MB, 13.6MB/s  [A
+  ...robe/phonevault-state.tar:  18%|█▊        |  263MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  18%|█▊        |  263MB / 1.44GB, 21.2MB/s  
+New Data Upload               :  44%|████▎     |  263MB /  603MB, 21.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  12%|█▏        |  176MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  12%|█▏        |  176MB / 1.51GB, 13.7MB/s  
-New Data Upload               :  33%|███▎      |  176MB /  536MB, 13.7MB/s  [A
+  ...robe/phonevault-state.tar:  19%|█▉        |  271MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  19%|█▉        |  271MB / 1.44GB, 21.7MB/s  
+New Data Upload               :  45%|████▍     |  271MB /  603MB, 21.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  12%|█▏        |  179MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  12%|█▏        |  179MB / 1.51GB, 13.8MB/s  
-New Data Upload               :  33%|███▎      |  179MB /  536MB, 13.8MB/s  [A
+  ...robe/phonevault-state.tar:  19%|█▉        |  279MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  19%|█▉        |  279MB / 1.44GB, 22.2MB/s  
+New Data Upload               :  46%|████▌     |  279MB /  603MB, 22.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  12%|█▏        |  185MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  12%|█▏        |  185MB / 1.51GB, 14.2MB/s  
-New Data Upload               :  34%|███▍      |  185MB /  536MB, 14.2MB/s  [A
+  ...robe/phonevault-state.tar:  20%|█▉        |  286MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  20%|█▉        |  286MB / 1.44GB, 22.6MB/s  
+New Data Upload               :  43%|████▎     |  286MB /  671MB, 22.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  12%|█▏        |  189MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  12%|█▏        |  189MB / 1.51GB, 14.5MB/s  
-New Data Upload               :  35%|███▌      |  189MB /  536MB, 14.5MB/s  [A
+  ...robe/phonevault-state.tar:  20%|██        |  291MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  20%|██        |  291MB / 1.44GB, 22.9MB/s  
+New Data Upload               :  43%|████▎     |  291MB /  671MB, 22.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  13%|█▎        |  196MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  13%|█▎        |  196MB / 1.51GB, 15.0MB/s  
-New Data Upload               :  33%|███▎      |  196MB /  604MB, 15.0MB/s  [A
+  ...robe/phonevault-state.tar:  21%|██        |  298MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  298MB / 1.44GB, 23.3MB/s  
+New Data Upload               :  44%|████▍     |  298MB /  671MB, 23.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  13%|█▎        |  204MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  13%|█▎        |  204MB / 1.51GB, 15.5MB/s  
-New Data Upload               :  34%|███▎      |  204MB /  604MB, 15.5MB/s  [A
+  ...robe/phonevault-state.tar:  21%|██        |  306MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  306MB / 1.44GB, 23.8MB/s  
+New Data Upload               :  46%|████▌     |  306MB /  671MB, 23.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  14%|█▎        |  207MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  14%|█▎        |  207MB / 1.51GB, 15.7MB/s  
-New Data Upload               :  34%|███▍      |  207MB /  604MB, 15.7MB/s  [A
+  ...robe/phonevault-state.tar:  22%|██▏       |  314MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  314MB / 1.44GB, 24.3MB/s  
+New Data Upload               :  47%|████▋     |  314MB /  671MB, 24.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  14%|█▍        |  212MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  14%|█▍        |  212MB / 1.51GB, 16.0MB/s  
-New Data Upload               :  32%|███▏      |  212MB /  671MB, 16.0MB/s  [A
+  ...robe/phonevault-state.tar:  22%|██▏       |  321MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  321MB / 1.44GB, 24.8MB/s  
+New Data Upload               :  48%|████▊     |  321MB /  671MB, 24.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  14%|█▍        |  219MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  14%|█▍        |  219MB / 1.51GB, 16.4MB/s  
-New Data Upload               :  33%|███▎      |  219MB /  671MB, 16.4MB/s  [A
+  ...robe/phonevault-state.tar:  23%|██▎       |  333MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  333MB / 1.44GB, 25.6MB/s  
+New Data Upload               :  50%|████▉     |  333MB /  671MB, 25.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  15%|█▌        |  227MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  15%|█▌        |  227MB / 1.51GB, 17.0MB/s  
-New Data Upload               :  34%|███▍      |  227MB /  671MB, 17.0MB/s  [A
+  ...robe/phonevault-state.tar:  23%|██▎       |  336MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  336MB / 1.44GB, 25.6MB/s  
+New Data Upload               :  46%|████▌     |  336MB /  738MB, 25.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  16%|█▌        |  236MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  16%|█▌        |  236MB / 1.51GB, 17.6MB/s  
-New Data Upload               :  35%|███▌      |  236MB /  671MB, 17.6MB/s  [A
+  ...robe/phonevault-state.tar:  24%|██▎       |  342MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  24%|██▎       |  342MB / 1.44GB, 25.9MB/s  
+New Data Upload               :  46%|████▋     |  342MB /  738MB, 25.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  16%|█▌        |  240MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  16%|█▌        |  240MB / 1.51GB, 17.9MB/s  
-New Data Upload               :  36%|███▌      |  240MB /  671MB, 17.9MB/s  [A
+  ...robe/phonevault-state.tar:  24%|██▍       |  349MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  349MB / 1.44GB, 26.3MB/s  
+New Data Upload               :  47%|████▋     |  349MB /  738MB, 26.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  16%|█▋        |  247MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  16%|█▋        |  247MB / 1.51GB, 18.3MB/s  
-New Data Upload               :  37%|███▋      |  247MB /  671MB, 18.3MB/s  [A
+  ...robe/phonevault-state.tar:  25%|██▍       |  356MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  356MB / 1.44GB, 26.7MB/s  
+New Data Upload               :  48%|████▊     |  356MB /  738MB, 26.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  17%|█▋        |  250MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  17%|█▋        |  250MB / 1.51GB, 18.4MB/s  
-New Data Upload               :  34%|███▍      |  250MB /  738MB, 18.4MB/s  [A
+  ...robe/phonevault-state.tar:  25%|██▌       |  366MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  366MB / 1.44GB, 27.4MB/s  
+New Data Upload               :  46%|████▌     |  366MB /  805MB, 27.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  17%|█▋        |  258MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  17%|█▋        |  258MB / 1.51GB, 18.9MB/s  
-New Data Upload               :  35%|███▍      |  258MB /  738MB, 18.9MB/s  [A
+  ...robe/phonevault-state.tar:  26%|██▌       |  376MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  376MB / 1.44GB, 27.9MB/s  
+New Data Upload               :  47%|████▋     |  376MB /  805MB, 27.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  17%|█▋        |  262MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  17%|█▋        |  262MB / 1.51GB, 19.1MB/s  
-New Data Upload               :  36%|███▌      |  262MB /  738MB, 19.1MB/s  [A
+  ...robe/phonevault-state.tar:  27%|██▋       |  384MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  384MB / 1.44GB, 28.4MB/s  
+New Data Upload               :  48%|████▊     |  384MB /  805MB, 28.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  18%|█▊        |  271MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  18%|█▊        |  271MB / 1.51GB, 19.7MB/s  
-New Data Upload               :  37%|███▋      |  271MB /  738MB, 19.7MB/s  [A
+  ...robe/phonevault-state.tar:  27%|██▋       |  389MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  389MB / 1.44GB, 28.6MB/s  
+New Data Upload               :  48%|████▊     |  389MB /  805MB, 28.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  18%|█▊        |  274MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  18%|█▊        |  274MB / 1.51GB, 19.8MB/s  
-New Data Upload               :  34%|███▍      |  274MB /  805MB, 19.8MB/s  [A
+  ...robe/phonevault-state.tar:  28%|██▊       |  399MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  399MB / 1.44GB, 29.2MB/s  
+New Data Upload               :  46%|████▌     |  399MB /  872MB, 29.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  18%|█▊        |  278MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  18%|█▊        |  278MB / 1.51GB, 19.9MB/s  
-New Data Upload               :  35%|███▍      |  278MB /  805MB, 19.9MB/s  [A
+  ...robe/phonevault-state.tar:  28%|██▊       |  402MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  402MB / 1.44GB, 29.3MB/s  
+New Data Upload               :  46%|████▌     |  402MB /  872MB, 29.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  19%|█▉        |  285MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  19%|█▉        |  285MB / 1.51GB, 20.4MB/s  
-New Data Upload               :  35%|███▌      |  285MB /  805MB, 20.4MB/s  [A
+  ...robe/phonevault-state.tar:  28%|██▊       |  411MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  411MB / 1.44GB, 29.8MB/s  
+New Data Upload               :  44%|████▍     |  411MB /  939MB, 29.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  19%|█▉        |  292MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  19%|█▉        |  292MB / 1.51GB, 20.8MB/s  
-New Data Upload               :  36%|███▋      |  292MB /  805MB, 20.8MB/s  [A
+  ...robe/phonevault-state.tar:  29%|██▉       |  422MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  29%|██▉       |  422MB / 1.44GB, 30.4MB/s  
+New Data Upload               :  45%|████▍     |  422MB /  939MB, 30.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  20%|█▉        |  302MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  20%|█▉        |  302MB / 1.51GB, 21.4MB/s  
-New Data Upload               :  37%|███▋      |  302MB /  805MB, 21.4MB/s  [A
+  ...robe/phonevault-state.tar:  30%|██▉       |  427MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  30%|██▉       |  427MB / 1.44GB, 30.6MB/s  
+New Data Upload               :  45%|████▌     |  427MB /  939MB, 30.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  20%|██        |  309MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  20%|██        |  309MB / 1.51GB, 21.9MB/s  
-New Data Upload               :  35%|███▌      |  309MB /  872MB, 21.9MB/s  [A
+  ...robe/phonevault-state.tar:  30%|███       |  434MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  30%|███       |  434MB / 1.44GB, 31.0MB/s  
+New Data Upload               :  46%|████▌     |  434MB /  939MB, 31.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  21%|██        |  316MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  316MB / 1.51GB, 22.3MB/s  
-New Data Upload               :  36%|███▌      |  316MB /  872MB, 22.3MB/s  [A
+  ...robe/phonevault-state.tar:  30%|███       |  440MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  30%|███       |  440MB / 1.44GB, 31.2MB/s  
+New Data Upload               :  44%|████▎     |  440MB / 1.01GB, 31.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  21%|██        |  320MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  21%|██        |  320MB / 1.51GB, 22.4MB/s  
-New Data Upload               :  37%|███▋      |  320MB /  872MB, 22.4MB/s  [A
+  ...robe/phonevault-state.tar:  31%|███       |  446MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  31%|███       |  446MB / 1.44GB, 31.5MB/s  
+New Data Upload               :  42%|████▏     |  446MB / 1.07GB, 31.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  21%|██▏       |  322MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  21%|██▏       |  322MB / 1.51GB, 22.4MB/s  
-New Data Upload               :  37%|███▋      |  322MB /  872MB, 22.4MB/s  [A
+  ...robe/phonevault-state.tar:  31%|███▏      |  454MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  31%|███▏      |  454MB / 1.44GB, 31.9MB/s  
+New Data Upload               :  42%|████▏     |  454MB / 1.07GB, 31.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  22%|██▏       |  329MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  329MB / 1.51GB, 22.8MB/s  
-New Data Upload               :  38%|███▊      |  329MB /  872MB, 22.8MB/s  [A
+  ...robe/phonevault-state.tar:  32%|███▏      |  461MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  32%|███▏      |  461MB / 1.44GB, 32.2MB/s  
+New Data Upload               :  43%|████▎     |  461MB / 1.07GB, 32.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  22%|██▏       |  334MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  334MB / 1.51GB, 23.1MB/s  
-New Data Upload               :  36%|███▌      |  334MB /  939MB, 23.1MB/s  [A
+  ...robe/phonevault-state.tar:  33%|███▎      |  474MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  33%|███▎      |  474MB / 1.44GB, 33.0MB/s  
+New Data Upload               :  44%|████▍     |  474MB / 1.07GB, 33.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  22%|██▏       |  339MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  22%|██▏       |  339MB / 1.51GB, 23.2MB/s  
-New Data Upload               :  36%|███▌      |  339MB /  939MB, 23.2MB/s  [A
+  ...robe/phonevault-state.tar:  33%|███▎      |  478MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  33%|███▎      |  478MB / 1.44GB, 33.1MB/s  
+New Data Upload               :  42%|████▏     |  478MB / 1.14GB, 33.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  23%|██▎       |  346MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  346MB / 1.51GB, 23.7MB/s  
-New Data Upload               :  37%|███▋      |  346MB /  939MB, 23.7MB/s  [A
+  ...robe/phonevault-state.tar:  33%|███▎      |  484MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  33%|███▎      |  484MB / 1.44GB, 33.3MB/s  
+New Data Upload               :  42%|████▏     |  484MB / 1.14GB, 33.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  23%|██▎       |  354MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  354MB / 1.51GB, 24.2MB/s  
-New Data Upload               :  38%|███▊      |  354MB /  939MB, 24.2MB/s  [A
+  ...robe/phonevault-state.tar:  34%|███▍      |  491MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  34%|███▍      |  491MB / 1.44GB, 33.6MB/s  
+New Data Upload               :  43%|████▎     |  491MB / 1.14GB, 33.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  24%|██▍       |  361MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  361MB / 1.51GB, 24.5MB/s  
-New Data Upload               :  36%|███▌      |  361MB / 1.01GB, 24.5MB/s  [A
+  ...robe/phonevault-state.tar:  35%|███▍      |  499MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  35%|███▍      |  499MB / 1.44GB, 34.0MB/s  
+New Data Upload               :  44%|████▎     |  498MB / 1.14GB, 34.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  24%|██▍       |  364MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  364MB / 1.51GB, 24.6MB/s  
-New Data Upload               :  36%|███▌      |  364MB / 1.01GB, 24.6MB/s  [A
+  ...robe/phonevault-state.tar:  35%|███▌      |  507MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  35%|███▌      |  507MB / 1.44GB, 34.4MB/s  
+New Data Upload               :  45%|████▍     |  507MB / 1.14GB, 34.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  24%|██▍       |  367MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  24%|██▍       |  367MB / 1.51GB, 24.6MB/s  
-New Data Upload               :  37%|███▋      |  367MB / 1.01GB, 24.6MB/s  [A
+  ...robe/phonevault-state.tar:  36%|███▌      |  514MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  36%|███▌      |  514MB / 1.44GB, 34.7MB/s  
+New Data Upload               :  45%|████▌     |  514MB / 1.14GB, 34.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  25%|██▍       |  376MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  25%|██▍       |  376MB / 1.51GB, 25.1MB/s  
-New Data Upload               :  37%|███▋      |  376MB / 1.01GB, 25.1MB/s  [A
+  ...robe/phonevault-state.tar:  36%|███▌      |  518MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  36%|███▌      |  518MB / 1.44GB, 34.7MB/s  
+New Data Upload               :  43%|████▎     |  518MB / 1.21GB, 34.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  25%|██▌       |  382MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  382MB / 1.51GB, 25.5MB/s  
-New Data Upload               :  36%|███▌      |  382MB / 1.07GB, 25.5MB/s  [A
+  ...robe/phonevault-state.tar:  36%|███▋      |  527MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  36%|███▋      |  527MB / 1.44GB, 35.2MB/s  
+New Data Upload               :  44%|████▎     |  527MB / 1.21GB, 35.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  25%|██▌       |  385MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  385MB / 1.51GB, 25.5MB/s  
-New Data Upload               :  36%|███▌      |  385MB / 1.07GB, 25.5MB/s  [A
+  ...robe/phonevault-state.tar:  37%|███▋      |  532MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  37%|███▋      |  532MB / 1.44GB, 35.3MB/s  
+New Data Upload               :  44%|████▍     |  532MB / 1.21GB, 35.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  26%|██▌       |  392MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  392MB / 1.51GB, 25.9MB/s  
-New Data Upload               :  37%|███▋      |  392MB / 1.07GB, 25.9MB/s  [A
+  ...robe/phonevault-state.tar:  37%|███▋      |  541MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  37%|███▋      |  541MB / 1.44GB, 35.8MB/s  
+New Data Upload               :  45%|████▍     |  541MB / 1.21GB, 35.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  27%|██▋       |  402MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  402MB / 1.51GB, 26.5MB/s  
-New Data Upload               :  35%|███▌      |  402MB / 1.14GB, 26.5MB/s  [A
+  ...robe/phonevault-state.tar:  38%|███▊      |  549MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  549MB / 1.44GB, 36.1MB/s  
+New Data Upload               :  45%|████▌     |  549MB / 1.21GB, 36.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  27%|██▋       |  407MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  27%|██▋       |  407MB / 1.51GB, 26.7MB/s  
-New Data Upload               :  36%|███▌      |  407MB / 1.14GB, 26.7MB/s  [A
+  ...robe/phonevault-state.tar:  38%|███▊      |  555MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  555MB / 1.44GB, 36.4MB/s  
+New Data Upload               :  44%|████▎     |  555MB / 1.27GB, 36.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  28%|██▊       |  417MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  417MB / 1.51GB, 27.3MB/s  
-New Data Upload               :  37%|███▋      |  417MB / 1.14GB, 27.3MB/s  [A
+  ...robe/phonevault-state.tar:  39%|███▉      |  562MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  562MB / 1.44GB, 36.7MB/s  
+New Data Upload               :  44%|████▍     |  562MB / 1.27GB, 36.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  28%|██▊       |  428MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  428MB / 1.51GB, 28.0MB/s  
-New Data Upload               :  38%|███▊      |  428MB / 1.14GB, 28.0MB/s  [A
+  ...robe/phonevault-state.tar:  40%|███▉      |  573MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  40%|███▉      |  573MB / 1.44GB, 37.2MB/s  
+New Data Upload               :  45%|████▍     |  573MB / 1.27GB, 37.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  29%|██▊       |  432MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  29%|██▊       |  432MB / 1.51GB, 28.0MB/s  
-New Data Upload               :  38%|███▊      |  432MB / 1.14GB, 28.0MB/s  [A
+  ...robe/phonevault-state.tar:  40%|████      |  582MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  40%|████      |  582MB / 1.44GB, 37.7MB/s  
+New Data Upload               :  46%|████▌     |  582MB / 1.27GB, 37.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  29%|██▉       |  441MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  29%|██▉       |  441MB / 1.51GB, 28.6MB/s  
-New Data Upload               :  39%|███▊      |  441MB / 1.14GB, 28.6MB/s  [A
+  ...robe/phonevault-state.tar:  40%|████      |  585MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  40%|████      |  585MB / 1.44GB, 37.6MB/s  
+New Data Upload               :  46%|████▌     |  585MB / 1.27GB, 37.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  30%|██▉       |  446MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  30%|██▉       |  446MB / 1.51GB, 28.8MB/s  
-New Data Upload               :  39%|███▉      |  446MB / 1.14GB, 28.8MB/s  [A
+  ...robe/phonevault-state.tar:  41%|████      |  593MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  41%|████      |  593MB / 1.44GB, 38.0MB/s  
+New Data Upload               :  44%|████▍     |  593MB / 1.34GB, 38.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  30%|███       |  456MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  30%|███       |  456MB / 1.51GB, 29.3MB/s  
-New Data Upload               :  40%|███▉      |  456MB / 1.14GB, 29.3MB/s  [A
+  ...robe/phonevault-state.tar:  42%|████▏     |  602MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  602MB / 1.44GB, 38.4MB/s  
+New Data Upload               :  45%|████▍     |  602MB / 1.34GB, 38.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  30%|███       |  458MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  30%|███       |  458MB / 1.51GB, 29.3MB/s  
-New Data Upload               :  38%|███▊      |  458MB / 1.21GB, 29.3MB/s  [A
+  ...robe/phonevault-state.tar:  42%|████▏     |  609MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  609MB / 1.44GB, 38.7MB/s  
+New Data Upload               :  45%|████▌     |  609MB / 1.34GB, 38.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  31%|███       |  464MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  31%|███       |  464MB / 1.51GB, 29.5MB/s  
-New Data Upload               :  38%|███▊      |  464MB / 1.21GB, 29.5MB/s  [A
+  ...robe/phonevault-state.tar:  43%|████▎     |  619MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  619MB / 1.44GB, 39.1MB/s  
+New Data Upload               :  46%|████▌     |  618MB / 1.34GB, 39.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  31%|███       |  469MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  31%|███       |  469MB / 1.51GB, 29.7MB/s  
-New Data Upload               :  39%|███▉      |  469MB / 1.21GB, 29.7MB/s  [A
+  ...robe/phonevault-state.tar:  43%|████▎     |  627MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  627MB / 1.44GB, 39.5MB/s  
+New Data Upload               :  47%|████▋     |  626MB / 1.34GB, 39.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  31%|███▏      |  474MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  31%|███▏      |  474MB / 1.51GB, 29.8MB/s  
-New Data Upload               :  37%|███▋      |  474MB / 1.27GB, 29.8MB/s  [A
+  ...robe/phonevault-state.tar:  44%|████▍     |  633MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  44%|████▍     |  633MB / 1.44GB, 39.7MB/s  
+New Data Upload               :  45%|████▍     |  633MB / 1.41GB, 39.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  32%|███▏      |  481MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  32%|███▏      |  481MB / 1.51GB, 30.1MB/s  
-New Data Upload               :  38%|███▊      |  481MB / 1.27GB, 30.1MB/s  [A
+  ...robe/phonevault-state.tar:  44%|████▍     |  641MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  44%|████▍     |  641MB / 1.44GB, 40.0MB/s  
+New Data Upload               :  45%|████▌     |  640MB / 1.41GB, 40.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  32%|███▏      |  485MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  32%|███▏      |  485MB / 1.51GB, 30.3MB/s  
-New Data Upload               :  38%|███▊      |  485MB / 1.27GB, 30.3MB/s  [A
+  ...robe/phonevault-state.tar:  45%|████▍     |  649MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  45%|████▍     |  649MB / 1.44GB, 40.3MB/s  
+New Data Upload               :  46%|████▌     |  648MB / 1.41GB, 40.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  33%|███▎      |  496MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  33%|███▎      |  496MB / 1.51GB, 30.8MB/s  
-New Data Upload               :  39%|███▉      |  496MB / 1.27GB, 30.8MB/s  [A
+  ...robe/phonevault-state.tar:  45%|████▌     |  657MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  45%|████▌     |  657MB / 1.44GB, 40.6MB/s  
+New Data Upload               :  47%|████▋     |  656MB / 1.41GB, 40.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  33%|███▎      |  500MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  33%|███▎      |  500MB / 1.51GB, 31.0MB/s  
-New Data Upload               :  39%|███▉      |  500MB / 1.27GB, 31.0MB/s  [A
+  ...robe/phonevault-state.tar:  46%|████▌     |  668MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  46%|████▌     |  668MB / 1.44GB, 41.2MB/s  
+New Data Upload               :  47%|████▋     |  668MB / 1.43GB, 41.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  34%|███▎      |  509MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  34%|███▎      |  509MB / 1.51GB, 31.4MB/s  
-New Data Upload               :  38%|███▊      |  509MB / 1.34GB, 31.4MB/s  [A
+  ...robe/phonevault-state.tar:  47%|████▋     |  674MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  47%|████▋     |  674MB / 1.44GB, 41.4MB/s  
+New Data Upload               :  47%|████▋     |  674MB / 1.43GB, 41.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  34%|███▍      |  512MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  34%|███▍      |  512MB / 1.51GB, 31.4MB/s  
-New Data Upload               :  38%|███▊      |  512MB / 1.34GB, 31.4MB/s  [A
+  ...robe/phonevault-state.tar:  47%|████▋     |  679MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  47%|████▋     |  679MB / 1.44GB, 41.5MB/s  
+New Data Upload               :  48%|████▊     |  679MB / 1.43GB, 41.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  34%|███▍      |  518MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  34%|███▍      |  518MB / 1.51GB, 31.6MB/s  
-New Data Upload               :  39%|███▊      |  518MB / 1.34GB, 31.6MB/s  [A
+  ...robe/phonevault-state.tar:  48%|████▊     |  686MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  686MB / 1.44GB, 41.7MB/s  
+New Data Upload               :  48%|████▊     |  686MB / 1.43GB, 41.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  35%|███▍      |  525MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  35%|███▍      |  525MB / 1.51GB, 31.9MB/s  
-New Data Upload               :  39%|███▉      |  525MB / 1.34GB, 31.9MB/s  [A
+  ...robe/phonevault-state.tar:  48%|████▊     |  693MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  693MB / 1.44GB, 41.9MB/s  
+New Data Upload               :  48%|████▊     |  693MB / 1.43GB, 41.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  35%|███▍      |  528MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  35%|███▍      |  528MB / 1.51GB, 32.0MB/s  
-New Data Upload               :  39%|███▉      |  528MB / 1.34GB, 32.0MB/s  [A
+  ...robe/phonevault-state.tar:  48%|████▊     |  699MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  699MB / 1.44GB, 42.0MB/s  
+New Data Upload               :  49%|████▉     |  698MB / 1.43GB, 42.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  35%|███▌      |  532MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  35%|███▌      |  532MB / 1.51GB, 32.0MB/s  
-New Data Upload               :  38%|███▊      |  532MB / 1.41GB, 32.0MB/s  [A
+  ...robe/phonevault-state.tar:  49%|████▉     |  711MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  49%|████▉     |  711MB / 1.44GB, 42.7MB/s  
+New Data Upload               :  50%|████▉     |  710MB / 1.43GB, 42.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  36%|███▌      |  540MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  36%|███▌      |  540MB / 1.51GB, 32.4MB/s  
-New Data Upload               :  38%|███▊      |  540MB / 1.41GB, 32.4MB/s  [A
+  ...robe/phonevault-state.tar:  50%|████▉     |  717MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  50%|████▉     |  717MB / 1.44GB, 42.8MB/s  
+New Data Upload               :  50%|█████     |  716MB / 1.43GB, 42.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  36%|███▋      |  550MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  36%|███▋      |  550MB / 1.51GB, 32.9MB/s  
-New Data Upload               :  39%|███▉      |  550MB / 1.41GB, 32.9MB/s  [A
+  ...robe/phonevault-state.tar:  50%|█████     |  725MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  50%|█████     |  725MB / 1.44GB, 43.1MB/s  
+New Data Upload               :  51%|█████     |  725MB / 1.43GB, 43.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  37%|███▋      |  557MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  37%|███▋      |  557MB / 1.51GB, 33.2MB/s  
-New Data Upload               :  40%|███▉      |  557MB / 1.41GB, 33.2MB/s  [A
+  ...robe/phonevault-state.tar:  51%|█████     |  736MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  51%|█████     |  736MB / 1.44GB, 43.7MB/s  
+New Data Upload               :  51%|█████▏    |  735MB / 1.43GB, 43.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  37%|███▋      |  563MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  37%|███▋      |  563MB / 1.51GB, 33.4MB/s  
-New Data Upload               :  40%|███▉      |  563MB / 1.41GB, 33.4MB/s  [A
+  ...robe/phonevault-state.tar:  51%|█████▏    |  743MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  51%|█████▏    |  743MB / 1.44GB, 43.9MB/s  
+New Data Upload               :  52%|█████▏    |  741MB / 1.43GB, 43.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  37%|███▋      |  564MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  37%|███▋      |  564MB / 1.51GB, 33.2MB/s  
-New Data Upload               :  40%|████      |  564MB / 1.41GB, 33.2MB/s  [A
+  ...robe/phonevault-state.tar:  52%|█████▏    |  750MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    |  750MB / 1.44GB, 44.1MB/s  
+New Data Upload               :  52%|█████▏    |  747MB / 1.43GB, 43.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  38%|███▊      |  568MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  568MB / 1.51GB, 33.3MB/s  
-New Data Upload               :  38%|███▊      |  568MB / 1.48GB, 33.3MB/s  [A
+  ...robe/phonevault-state.tar:  53%|█████▎    |  759MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  53%|█████▎    |  759MB / 1.44GB, 44.5MB/s  
+New Data Upload               :  53%|█████▎    |  756MB / 1.43GB, 44.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  38%|███▊      |  577MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  577MB / 1.51GB, 33.8MB/s  
-New Data Upload               :  39%|███▉      |  577MB / 1.48GB, 33.8MB/s  [A
+  ...robe/phonevault-state.tar:  53%|█████▎    |  766MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  53%|█████▎    |  766MB / 1.44GB, 44.7MB/s  
+New Data Upload               :  53%|█████▎    |  763MB / 1.43GB, 44.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  39%|███▊      |  585MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  39%|███▊      |  585MB / 1.51GB, 34.1MB/s  
-New Data Upload               :  40%|███▉      |  585MB / 1.48GB, 34.1MB/s  [A
+  ...robe/phonevault-state.tar:  54%|█████▎    |  775MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  54%|█████▎    |  775MB / 1.44GB, 45.0MB/s  
+New Data Upload               :  54%|█████▍    |  771MB / 1.43GB, 44.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  39%|███▉      |  588MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  588MB / 1.51GB, 34.1MB/s  
-New Data Upload               :  39%|███▉      |  588MB / 1.50GB, 34.1MB/s  [A
+  ...robe/phonevault-state.tar:  54%|█████▍    |  780MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  54%|█████▍    |  780MB / 1.44GB, 45.1MB/s  
+New Data Upload               :  54%|█████▍    |  775MB / 1.43GB, 44.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  39%|███▉      |  594MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  594MB / 1.51GB, 34.3MB/s  
-New Data Upload               :  40%|███▉      |  594MB / 1.50GB, 34.3MB/s  [A
+  ...robe/phonevault-state.tar:  54%|█████▍    |  785MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  54%|█████▍    |  785MB / 1.44GB, 45.1MB/s  
+New Data Upload               :  55%|█████▍    |  780MB / 1.43GB, 44.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  40%|███▉      |  598MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  40%|███▉      |  598MB / 1.51GB, 34.4MB/s  
-New Data Upload               :  40%|███▉      |  598MB / 1.50GB, 34.4MB/s  [A
+  ...robe/phonevault-state.tar:  55%|█████▌    |  799MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  55%|█████▌    |  799MB / 1.44GB, 45.9MB/s  
+New Data Upload               :  55%|█████▌    |  792MB / 1.43GB, 45.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  40%|████      |  606MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  40%|████      |  606MB / 1.51GB, 34.7MB/s  
-New Data Upload               :  40%|████      |  606MB / 1.50GB, 34.7MB/s  [A
+  ...robe/phonevault-state.tar:  56%|█████▌    |  804MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  804MB / 1.44GB, 45.9MB/s  
+New Data Upload               :  56%|█████▌    |  796MB / 1.43GB, 45.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  40%|████      |  611MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  40%|████      |  611MB / 1.51GB, 34.8MB/s  
-New Data Upload               :  41%|████      |  611MB / 1.50GB, 34.8MB/s  [A
+  ...robe/phonevault-state.tar:  57%|█████▋    |  816MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  816MB / 1.44GB, 46.5MB/s  
+New Data Upload               :  56%|█████▋    |  807MB / 1.43GB, 45.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  41%|████      |  621MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  41%|████      |  621MB / 1.51GB, 35.4MB/s  
-New Data Upload               :  42%|████▏     |  621MB / 1.50GB, 35.4MB/s  [A
+  ...robe/phonevault-state.tar:  57%|█████▋    |  828MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  828MB / 1.44GB, 47.1MB/s  
+New Data Upload               :  57%|█████▋    |  816MB / 1.43GB, 46.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  41%|████▏     |  626MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  41%|████▏     |  626MB / 1.51GB, 35.5MB/s  
-New Data Upload               :  42%|████▏     |  626MB / 1.50GB, 35.5MB/s  [A
+  ...robe/phonevault-state.tar:  59%|█████▊    |  846MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  59%|█████▊    |  846MB / 1.44GB, 48.2MB/s  
+New Data Upload               :  58%|█████▊    |  831MB / 1.43GB, 47.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  42%|████▏     |  632MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  632MB / 1.51GB, 35.6MB/s  
-New Data Upload               :  42%|████▏     |  631MB / 1.50GB, 35.6MB/s  [A
+  ...robe/phonevault-state.tar:  59%|█████▉    |  853MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  59%|█████▉    |  853MB / 1.44GB, 48.4MB/s  
+New Data Upload               :  59%|█████▊    |  838MB / 1.43GB, 47.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  43%|████▎     |  643MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  643MB / 1.51GB, 36.2MB/s  
-New Data Upload               :  43%|████▎     |  641MB / 1.50GB, 36.1MB/s  [A
+  ...robe/phonevault-state.tar:  60%|█████▉    |  866MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  60%|█████▉    |  866MB / 1.44GB, 48.9MB/s  
+New Data Upload               :  59%|█████▉    |  850MB / 1.43GB, 47.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  43%|████▎     |  657MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  657MB / 1.51GB, 37.0MB/s  
-New Data Upload               :  44%|████▎     |  652MB / 1.50GB, 36.6MB/s  [A
+  ...robe/phonevault-state.tar:  60%|██████    |  874MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  60%|██████    |  874MB / 1.44GB, 49.2MB/s  
+New Data Upload               :  60%|██████    |  858MB / 1.43GB, 48.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  44%|████▍     |  668MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  44%|████▍     |  668MB / 1.51GB, 37.6MB/s  
-New Data Upload               :  44%|████▍     |  661MB / 1.50GB, 37.1MB/s  [A
+  ...robe/phonevault-state.tar:  61%|██████    |  882MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  61%|██████    |  882MB / 1.44GB, 49.5MB/s  
+New Data Upload               :  61%|██████    |  867MB / 1.43GB, 48.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  45%|████▍     |  679MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  45%|████▍     |  679MB / 1.51GB, 38.2MB/s  
-New Data Upload               :  45%|████▍     |  670MB / 1.50GB, 37.5MB/s  [A
+  ...robe/phonevault-state.tar:  62%|██████▏   |  893MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  62%|██████▏   |  893MB / 1.44GB, 50.0MB/s  
+New Data Upload               :  61%|██████▏   |  878MB / 1.43GB, 48.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  46%|████▌     |  690MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  46%|████▌     |  690MB / 1.51GB, 38.8MB/s  
-New Data Upload               :  45%|████▌     |  679MB / 1.50GB, 37.9MB/s  [A
+  ...robe/phonevault-state.tar:  63%|██████▎   |  905MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  63%|██████▎   |  905MB / 1.44GB, 50.5MB/s  
+New Data Upload               :  62%|██████▏   |  889MB / 1.43GB, 49.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  46%|████▋     |  700MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  46%|████▋     |  700MB / 1.51GB, 39.3MB/s  
-New Data Upload               :  46%|████▌     |  687MB / 1.50GB, 38.2MB/s  [A
+  ...robe/phonevault-state.tar:  63%|██████▎   |  913MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  63%|██████▎   |  913MB / 1.44GB, 50.7MB/s  
+New Data Upload               :  63%|██████▎   |  898MB / 1.43GB, 49.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  47%|████▋     |  711MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  47%|████▋     |  711MB / 1.51GB, 39.8MB/s  
-New Data Upload               :  47%|████▋     |  696MB / 1.50GB, 38.6MB/s  [A
+  ...robe/phonevault-state.tar:  64%|██████▍   |  924MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  64%|██████▍   |  924MB / 1.44GB, 51.2MB/s  
+New Data Upload               :  64%|██████▎   |  909MB / 1.43GB, 50.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  48%|████▊     |  720MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  720MB / 1.51GB, 40.2MB/s  
-New Data Upload               :  47%|████▋     |  704MB / 1.50GB, 39.0MB/s  [A
+  ...robe/phonevault-state.tar:  65%|██████▍   |  932MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  65%|██████▍   |  932MB / 1.44GB, 51.4MB/s  
+New Data Upload               :  64%|██████▍   |  917MB / 1.43GB, 50.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  48%|████▊     |  726MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  726MB / 1.51GB, 40.4MB/s  
-New Data Upload               :  47%|████▋     |  711MB / 1.50GB, 39.2MB/s  [A
+  ...robe/phonevault-state.tar:  65%|██████▌   |  939MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  65%|██████▌   |  939MB / 1.44GB, 51.6MB/s  
+New Data Upload               :  65%|██████▍   |  924MB / 1.43GB, 50.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  48%|████▊     |  732MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     |  732MB / 1.51GB, 40.5MB/s  
-New Data Upload               :  48%|████▊     |  716MB / 1.50GB, 39.3MB/s  [A
+  ...robe/phonevault-state.tar:  66%|██████▌   |  950MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  66%|██████▌   |  950MB / 1.44GB, 52.0MB/s  
+New Data Upload               :  65%|██████▌   |  934MB / 1.43GB, 50.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  49%|████▉     |  739MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  49%|████▉     |  739MB / 1.51GB, 40.8MB/s  
-New Data Upload               :  48%|████▊     |  724MB / 1.50GB, 39.6MB/s  [A
+  ...robe/phonevault-state.tar:  66%|██████▌   |  957MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  66%|██████▌   |  957MB / 1.44GB, 52.1MB/s  
+New Data Upload               :  66%|██████▌   |  941MB / 1.43GB, 51.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  50%|████▉     |  749MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  50%|████▉     |  749MB / 1.51GB, 41.2MB/s  
-New Data Upload               :  49%|████▉     |  733MB / 1.50GB, 40.0MB/s  [A
+  ...robe/phonevault-state.tar:  67%|██████▋   |  965MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  67%|██████▋   |  965MB / 1.44GB, 52.4MB/s  
+New Data Upload               :  66%|██████▋   |  949MB / 1.43GB, 51.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  50%|████▉     |  756MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  50%|████▉     |  756MB / 1.51GB, 41.4MB/s  
-New Data Upload               :  49%|████▉     |  740MB / 1.50GB, 40.2MB/s  [A
+  ...robe/phonevault-state.tar:  68%|██████▊   |  977MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   |  977MB / 1.44GB, 52.9MB/s  
+New Data Upload               :  67%|██████▋   |  961MB / 1.43GB, 51.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  50%|█████     |  763MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  50%|█████     |  763MB / 1.51GB, 41.7MB/s  
-New Data Upload               :  50%|████▉     |  748MB / 1.50GB, 40.5MB/s  [A
+  ...robe/phonevault-state.tar:  68%|██████▊   |  983MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   |  983MB / 1.44GB, 53.0MB/s  
+New Data Upload               :  68%|██████▊   |  968MB / 1.43GB, 51.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  51%|█████     |  768MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  51%|█████     |  768MB / 1.51GB, 41.7MB/s  
-New Data Upload               :  50%|█████     |  752MB / 1.50GB, 40.5MB/s  [A
+  ...robe/phonevault-state.tar:  69%|██████▉   |  997MB / 1.44GB            [A[AProcessing Files (0 / 1)      :  69%|██████▉   |  997MB / 1.44GB, 53.6MB/s  
+New Data Upload               :  69%|██████▊   |  981MB / 1.43GB, 52.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  51%|█████▏    |  775MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  51%|█████▏    |  775MB / 1.51GB, 41.9MB/s  
-New Data Upload               :  51%|█████     |  760MB / 1.50GB, 40.8MB/s  [A
+  ...robe/phonevault-state.tar:  69%|██████▉   | 1.00GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  69%|██████▉   | 1.00GB / 1.44GB, 53.8MB/s  
+New Data Upload               :  69%|██████▉   |  988MB / 1.43GB, 52.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  52%|█████▏    |  784MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    |  784MB / 1.51GB, 42.3MB/s  
-New Data Upload               :  51%|█████▏    |  768MB / 1.50GB, 41.2MB/s  [A
+  ...robe/phonevault-state.tar:  70%|███████   | 1.02GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  70%|███████   | 1.02GB / 1.44GB, 54.2MB/s  
+New Data Upload               :  70%|██████▉   | 1.00GB / 1.43GB, 53.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  52%|█████▏    |  790MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    |  790MB / 1.51GB, 42.4MB/s  
-New Data Upload               :  52%|█████▏    |  774MB / 1.50GB, 41.3MB/s  [A
+  ...robe/phonevault-state.tar:  71%|███████   | 1.02GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  71%|███████   | 1.02GB / 1.44GB, 54.3MB/s  
+New Data Upload               :  70%|███████   | 1.01GB / 1.43GB, 53.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  52%|█████▏    |  793MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    |  793MB / 1.51GB, 42.3MB/s  
-New Data Upload               :  52%|█████▏    |  777MB / 1.50GB, 41.2MB/s  [A
+  ...robe/phonevault-state.tar:  71%|███████▏  | 1.03GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  71%|███████▏  | 1.03GB / 1.44GB, 54.5MB/s  
+New Data Upload               :  71%|███████   | 1.01GB / 1.43GB, 53.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  53%|█████▎    |  797MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  53%|█████▎    |  797MB / 1.51GB, 42.3MB/s  
-New Data Upload               :  52%|█████▏    |  781MB / 1.50GB, 41.2MB/s  [A
+  ...robe/phonevault-state.tar:  72%|███████▏  | 1.04GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  72%|███████▏  | 1.04GB / 1.44GB, 54.8MB/s  
+New Data Upload               :  72%|███████▏  | 1.02GB / 1.43GB, 53.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  53%|█████▎    |  806MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  53%|█████▎    |  806MB / 1.51GB, 42.6MB/s  
-New Data Upload               :  53%|█████▎    |  790MB / 1.50GB, 41.6MB/s  [A
+  ...robe/phonevault-state.tar:  73%|███████▎  | 1.05GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  73%|███████▎  | 1.05GB / 1.44GB, 55.1MB/s  
+New Data Upload               :  72%|███████▏  | 1.03GB / 1.43GB, 54.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  54%|█████▎    |  809MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  54%|█████▎    |  809MB / 1.51GB, 42.6MB/s  
-New Data Upload               :  53%|█████▎    |  794MB / 1.50GB, 41.5MB/s  [A
+  ...robe/phonevault-state.tar:  73%|███████▎  | 1.06GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  73%|███████▎  | 1.06GB / 1.44GB, 55.3MB/s  
+New Data Upload               :  73%|███████▎  | 1.04GB / 1.43GB, 54.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  54%|█████▍    |  816MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  54%|█████▍    |  816MB / 1.51GB, 42.8MB/s  
-New Data Upload               :  54%|█████▎    |  801MB / 1.50GB, 41.8MB/s  [A
+  ...robe/phonevault-state.tar:  74%|███████▍  | 1.07GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  74%|███████▍  | 1.07GB / 1.44GB, 55.7MB/s  
+New Data Upload               :  74%|███████▎  | 1.05GB / 1.43GB, 54.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  55%|█████▍    |  826MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  55%|█████▍    |  826MB / 1.51GB, 43.2MB/s  
-New Data Upload               :  54%|█████▍    |  811MB / 1.50GB, 42.2MB/s  [A
+  ...robe/phonevault-state.tar:  75%|███████▍  | 1.08GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  75%|███████▍  | 1.08GB / 1.44GB, 56.0MB/s  
+New Data Upload               :  74%|███████▍  | 1.06GB / 1.43GB, 55.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  55%|█████▍    |  830MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  55%|█████▍    |  830MB / 1.51GB, 43.2MB/s  
-New Data Upload               :  54%|█████▍    |  815MB / 1.50GB, 42.2MB/s  [A
+  ...robe/phonevault-state.tar:  75%|███████▌  | 1.09GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  75%|███████▌  | 1.09GB / 1.44GB, 56.3MB/s  
+New Data Upload               :  75%|███████▍  | 1.07GB / 1.43GB, 55.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  55%|█████▌    |  833MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  55%|█████▌    |  833MB / 1.51GB, 43.0MB/s  
-New Data Upload               :  55%|█████▍    |  817MB / 1.50GB, 42.0MB/s  [A
+  ...robe/phonevault-state.tar:  76%|███████▌  | 1.09GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  76%|███████▌  | 1.09GB / 1.44GB, 56.5MB/s  
+New Data Upload               :  76%|███████▌  | 1.08GB / 1.43GB, 55.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  56%|█████▌    |  842MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  842MB / 1.51GB, 43.4MB/s  
-New Data Upload               :  55%|█████▌    |  826MB / 1.50GB, 42.4MB/s  [A
+  ...robe/phonevault-state.tar:  77%|███████▋  | 1.11GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  | 1.11GB / 1.44GB, 57.0MB/s  
+New Data Upload               :  76%|███████▋  | 1.09GB / 1.43GB, 56.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  56%|█████▌    |  850MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  56%|█████▌    |  850MB / 1.51GB, 43.8MB/s  
-New Data Upload               :  56%|█████▌    |  835MB / 1.50GB, 42.7MB/s  [A
+  ...robe/phonevault-state.tar:  77%|███████▋  | 1.11GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  | 1.11GB / 1.44GB, 57.2MB/s  
+New Data Upload               :  77%|███████▋  | 1.10GB / 1.43GB, 56.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  57%|█████▋    |  857MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  857MB / 1.51GB, 43.9MB/s  
-New Data Upload               :  56%|█████▌    |  841MB / 1.50GB, 42.9MB/s  [A
+  ...robe/phonevault-state.tar:  78%|███████▊  | 1.12GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  | 1.12GB / 1.44GB, 57.4MB/s  
+New Data Upload               :  77%|███████▋  | 1.11GB / 1.43GB, 56.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  57%|█████▋    |  860MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  860MB / 1.51GB, 43.8MB/s  
-New Data Upload               :  56%|█████▋    |  845MB / 1.50GB, 42.8MB/s  [A
+  ...robe/phonevault-state.tar:  78%|███████▊  | 1.13GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  | 1.13GB / 1.44GB, 57.8MB/s  
+New Data Upload               :  78%|███████▊  | 1.12GB / 1.43GB, 56.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  57%|█████▋    |  865MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    |  865MB / 1.51GB, 43.9MB/s  
-New Data Upload               :  57%|█████▋    |  850MB / 1.50GB, 42.9MB/s  [A
+  ...robe/phonevault-state.tar:  79%|███████▉  | 1.15GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  79%|███████▉  | 1.15GB / 1.44GB, 58.4MB/s  
+New Data Upload               :  79%|███████▉  | 1.13GB / 1.43GB, 57.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  58%|█████▊    |  875MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  875MB / 1.51GB, 44.3MB/s  
-New Data Upload               :  57%|█████▋    |  860MB / 1.50GB, 43.3MB/s  [A
+  ...robe/phonevault-state.tar:  80%|███████▉  | 1.16GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  80%|███████▉  | 1.16GB / 1.44GB, 58.6MB/s  
+New Data Upload               :  80%|███████▉  | 1.14GB / 1.43GB, 57.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  58%|█████▊    |  880MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    |  880MB / 1.51GB, 44.4MB/s  
-New Data Upload               :  58%|█████▊    |  865MB / 1.50GB, 43.4MB/s  [A
+  ...robe/phonevault-state.tar:  81%|████████  | 1.17GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  81%|████████  | 1.17GB / 1.44GB, 58.9MB/s  
+New Data Upload               :  80%|████████  | 1.15GB / 1.43GB, 58.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  59%|█████▊    |  886MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  59%|█████▊    |  886MB / 1.51GB, 44.5MB/s  
-New Data Upload               :  58%|█████▊    |  871MB / 1.50GB, 43.5MB/s  [A
+  ...robe/phonevault-state.tar:  81%|████████▏ | 1.17GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ | 1.17GB / 1.44GB, 59.2MB/s  
+New Data Upload               :  81%|████████  | 1.16GB / 1.43GB, 58.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  59%|█████▉    |  892MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  59%|█████▉    |  892MB / 1.51GB, 44.5MB/s  
-New Data Upload               :  59%|█████▊    |  876MB / 1.50GB, 43.6MB/s  [A
+  ...robe/phonevault-state.tar:  82%|████████▏ | 1.18GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ | 1.18GB / 1.44GB, 59.3MB/s  
+New Data Upload               :  82%|████████▏ | 1.17GB / 1.43GB, 58.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  59%|█████▉    |  898MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  59%|█████▉    |  898MB / 1.51GB, 44.7MB/s  
-New Data Upload               :  59%|█████▉    |  882MB / 1.50GB, 43.7MB/s  [A
+  ...robe/phonevault-state.tar:  83%|████████▎ | 1.19GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ | 1.19GB / 1.44GB, 59.7MB/s  
+New Data Upload               :  82%|████████▏ | 1.18GB / 1.43GB, 58.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  60%|█████▉    |  905MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  60%|█████▉    |  905MB / 1.51GB, 44.8MB/s  
-New Data Upload               :  59%|█████▉    |  889MB / 1.50GB, 43.9MB/s  [A
+  ...robe/phonevault-state.tar:  83%|████████▎ | 1.20GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ | 1.20GB / 1.44GB, 59.9MB/s  
+New Data Upload               :  83%|████████▎ | 1.19GB / 1.43GB, 59.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  60%|██████    |  910MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  60%|██████    |  910MB / 1.51GB, 44.9MB/s  
-New Data Upload               :  60%|█████▉    |  895MB / 1.50GB, 44.0MB/s  [A
+  ...robe/phonevault-state.tar:  84%|████████▍ | 1.21GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.21GB / 1.44GB, 60.2MB/s  
+New Data Upload               :  84%|████████▎ | 1.20GB / 1.43GB, 59.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  60%|██████    |  914MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  60%|██████    |  914MB / 1.51GB, 44.9MB/s  
-New Data Upload               :  60%|██████    |  899MB / 1.50GB, 43.9MB/s  [A
+  ...robe/phonevault-state.tar:  84%|████████▍ | 1.22GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.22GB / 1.44GB, 60.3MB/s  
+New Data Upload               :  84%|████████▍ | 1.20GB / 1.43GB, 59.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  61%|██████    |  919MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  61%|██████    |  919MB / 1.51GB, 44.9MB/s  
-New Data Upload               :  60%|██████    |  904MB / 1.50GB, 44.0MB/s  [A
+  ...robe/phonevault-state.tar:  85%|████████▍ | 1.23GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.23GB / 1.44GB, 60.5MB/s  
+New Data Upload               :  85%|████████▍ | 1.21GB / 1.43GB, 59.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  61%|██████    |  925MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  61%|██████    |  925MB / 1.51GB, 45.0MB/s  
-New Data Upload               :  61%|██████    |  910MB / 1.50GB, 44.1MB/s  [A
+  ...robe/phonevault-state.tar:  86%|████████▌ | 1.24GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.24GB / 1.44GB, 60.7MB/s  
+New Data Upload               :  85%|████████▌ | 1.22GB / 1.43GB, 59.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  61%|██████▏   |  929MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  61%|██████▏   |  929MB / 1.51GB, 45.0MB/s  
-New Data Upload               :  61%|██████    |  914MB / 1.50GB, 44.1MB/s  [A
+  ...robe/phonevault-state.tar:  86%|████████▌ | 1.24GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.24GB / 1.44GB, 60.8MB/s  
+New Data Upload               :  86%|████████▌ | 1.23GB / 1.43GB, 59.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  62%|██████▏   |  933MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  62%|██████▏   |  933MB / 1.51GB, 44.9MB/s  
-New Data Upload               :  61%|██████▏   |  917MB / 1.50GB, 44.0MB/s  [A
+  ...robe/phonevault-state.tar:  86%|████████▋ | 1.25GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  86%|████████▋ | 1.25GB / 1.44GB, 60.8MB/s  
+New Data Upload               :  86%|████████▋ | 1.23GB / 1.43GB, 59.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  62%|██████▏   |  940MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  62%|██████▏   |  940MB / 1.51GB, 45.1MB/s  
-New Data Upload               :  62%|██████▏   |  924MB / 1.50GB, 44.2MB/s  [A
+  ...robe/phonevault-state.tar:  87%|████████▋ | 1.25GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.25GB / 1.44GB, 60.5MB/s  
+New Data Upload               :  87%|████████▋ | 1.24GB / 1.43GB, 59.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  63%|██████▎   |  949MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  63%|██████▎   |  949MB / 1.51GB, 45.4MB/s  
-New Data Upload               :  62%|██████▏   |  933MB / 1.50GB, 44.5MB/s  [A
+  ...robe/phonevault-state.tar:  87%|████████▋ | 1.26GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.26GB / 1.44GB, 60.7MB/s  
+New Data Upload               :  87%|████████▋ | 1.25GB / 1.43GB, 59.9MB/s  [A
 
-  ...robe/phonevault-state.tar:  63%|██████▎   |  952MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  63%|██████▎   |  952MB / 1.51GB, 45.4MB/s  
-New Data Upload               :  63%|██████▎   |  937MB / 1.50GB, 44.5MB/s  [A
+  ...robe/phonevault-state.tar:  88%|████████▊ | 1.26GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.26GB / 1.44GB, 60.5MB/s  
+New Data Upload               :  87%|████████▋ | 1.25GB / 1.43GB, 59.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  63%|██████▎   |  959MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  63%|██████▎   |  959MB / 1.51GB, 45.5MB/s  
-New Data Upload               :  63%|██████▎   |  944MB / 1.50GB, 44.7MB/s  [A
+  ...robe/phonevault-state.tar:  88%|████████▊ | 1.27GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.27GB / 1.44GB, 60.6MB/s  
+New Data Upload               :  88%|████████▊ | 1.26GB / 1.43GB, 59.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  64%|██████▎   |  962MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  64%|██████▎   |  962MB / 1.51GB, 45.4MB/s  
-New Data Upload               :  63%|██████▎   |  947MB / 1.50GB, 44.6MB/s  [A
+  ...robe/phonevault-state.tar:  89%|████████▊ | 1.28GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  89%|████████▊ | 1.28GB / 1.44GB, 60.6MB/s  
+New Data Upload               :  88%|████████▊ | 1.26GB / 1.43GB, 59.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  64%|██████▍   |  967MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  64%|██████▍   |  967MB / 1.51GB, 45.4MB/s  
-New Data Upload               :  64%|██████▎   |  952MB / 1.50GB, 44.6MB/s  [A
+  ...robe/phonevault-state.tar:  89%|████████▉ | 1.29GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.29GB / 1.44GB, 60.9MB/s  
+New Data Upload               :  89%|████████▉ | 1.27GB / 1.43GB, 60.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  64%|██████▍   |  975MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  64%|██████▍   |  975MB / 1.51GB, 45.7MB/s  
-New Data Upload               :  64%|██████▍   |  959MB / 1.50GB, 44.8MB/s  [A
+  ...robe/phonevault-state.tar:  90%|████████▉ | 1.29GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.29GB / 1.44GB, 60.9MB/s  
+New Data Upload               :  89%|████████▉ | 1.28GB / 1.43GB, 60.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  65%|██████▍   |  979MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  65%|██████▍   |  979MB / 1.51GB, 45.7MB/s  
-New Data Upload               :  64%|██████▍   |  964MB / 1.50GB, 44.8MB/s  [A
+  ...robe/phonevault-state.tar:  90%|█████████ | 1.30GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.30GB / 1.44GB, 61.0MB/s  
+New Data Upload               :  90%|████████▉ | 1.29GB / 1.43GB, 60.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  65%|██████▍   |  983MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  65%|██████▍   |  983MB / 1.51GB, 45.6MB/s  
-New Data Upload               :  65%|██████▍   |  967MB / 1.50GB, 44.7MB/s  [A
+  ...robe/phonevault-state.tar:  90%|█████████ | 1.31GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.31GB / 1.44GB, 60.9MB/s  
+New Data Upload               :  90%|█████████ | 1.29GB / 1.43GB, 60.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  65%|██████▌   |  989MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  65%|██████▌   |  989MB / 1.51GB, 45.7MB/s  
-New Data Upload               :  65%|██████▌   |  974MB / 1.50GB, 44.9MB/s  [A
+  ...robe/phonevault-state.tar:  91%|█████████ | 1.31GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.31GB / 1.44GB, 61.0MB/s  
+New Data Upload               :  91%|█████████ | 1.30GB / 1.43GB, 60.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  66%|██████▌   |  997MB / 1.51GB            [A[AProcessing Files (0 / 1)      :  66%|██████▌   |  997MB / 1.51GB, 46.0MB/s  
-New Data Upload               :  66%|██████▌   |  982MB / 1.50GB, 45.1MB/s  [A
+  ...robe/phonevault-state.tar:  91%|█████████ | 1.32GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.32GB / 1.44GB, 60.8MB/s  
+New Data Upload               :  91%|█████████ | 1.30GB / 1.43GB, 60.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  66%|██████▌   | 1.00GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  66%|██████▌   | 1.00GB / 1.51GB, 45.8MB/s  
-New Data Upload               :  66%|██████▌   |  984MB / 1.50GB, 45.0MB/s  [A
+  ...robe/phonevault-state.tar:  92%|█████████▏| 1.32GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.32GB / 1.44GB, 60.9MB/s  
+New Data Upload               :  92%|█████████▏| 1.31GB / 1.43GB, 60.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  66%|██████▋   | 1.00GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  66%|██████▋   | 1.00GB / 1.51GB, 45.8MB/s  
-New Data Upload               :  66%|██████▌   |  989MB / 1.50GB, 45.0MB/s  [A
+  ...robe/phonevault-state.tar:  92%|█████████▏| 1.33GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.33GB / 1.44GB, 61.0MB/s  
+New Data Upload               :  92%|█████████▏| 1.32GB / 1.43GB, 60.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  67%|██████▋   | 1.01GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  67%|██████▋   | 1.01GB / 1.51GB, 45.8MB/s  
-New Data Upload               :  66%|██████▋   |  993MB / 1.50GB, 45.0MB/s  [A
+  ...robe/phonevault-state.tar:  92%|█████████▏| 1.34GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.34GB / 1.44GB, 60.8MB/s  
+New Data Upload               :  92%|█████████▏| 1.32GB / 1.43GB, 60.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  67%|██████▋   | 1.02GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  67%|██████▋   | 1.02GB / 1.51GB, 46.2MB/s  
-New Data Upload               :  67%|██████▋   | 1.00GB / 1.50GB, 45.4MB/s  [A
+  ...robe/phonevault-state.tar:  93%|█████████▎| 1.34GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.34GB / 1.44GB, 60.8MB/s  
+New Data Upload               :  93%|█████████▎| 1.33GB / 1.43GB, 60.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  68%|██████▊   | 1.02GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   | 1.02GB / 1.51GB, 46.1MB/s  
-New Data Upload               :  67%|██████▋   | 1.01GB / 1.50GB, 45.3MB/s  [A
+  ...robe/phonevault-state.tar:  93%|█████████▎| 1.35GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.35GB / 1.44GB, 61.0MB/s  
+New Data Upload               :  93%|█████████▎| 1.33GB / 1.43GB, 60.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  68%|██████▊   | 1.02GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   | 1.02GB / 1.51GB, 45.9MB/s  
-New Data Upload               :  67%|██████▋   | 1.01GB / 1.50GB, 45.1MB/s  [A
+  ...robe/phonevault-state.tar:  94%|█████████▍| 1.36GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.36GB / 1.44GB, 61.0MB/s  
+New Data Upload               :  94%|█████████▍| 1.34GB / 1.43GB, 60.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  68%|██████▊   | 1.03GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   | 1.03GB / 1.51GB, 45.9MB/s  
-New Data Upload               :  68%|██████▊   | 1.01GB / 1.50GB, 45.2MB/s  [A
+  ...robe/phonevault-state.tar:  95%|█████████▍| 1.37GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.37GB / 1.44GB, 61.2MB/s  
+New Data Upload               :  94%|█████████▍| 1.35GB / 1.43GB, 60.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  68%|██████▊   | 1.03GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   | 1.03GB / 1.51GB, 45.9MB/s  
-New Data Upload               :  68%|██████▊   | 1.02GB / 1.50GB, 45.1MB/s  [A
+  ...robe/phonevault-state.tar:  95%|█████████▌| 1.37GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.37GB / 1.44GB, 61.3MB/s  
+New Data Upload               :  95%|█████████▍| 1.36GB / 1.43GB, 60.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  69%|██████▊   | 1.04GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  69%|██████▊   | 1.04GB / 1.51GB, 45.9MB/s  
-New Data Upload               :  68%|██████▊   | 1.02GB / 1.50GB, 45.1MB/s  [A
+  ...robe/phonevault-state.tar:  96%|█████████▌| 1.38GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.38GB / 1.44GB, 61.5MB/s  
+New Data Upload               :  96%|█████████▌| 1.37GB / 1.43GB, 60.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  69%|██████▉   | 1.05GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  69%|██████▉   | 1.05GB / 1.51GB, 46.3MB/s  
-New Data Upload               :  69%|██████▉   | 1.03GB / 1.50GB, 45.5MB/s  [A
+  ...robe/phonevault-state.tar:  96%|█████████▌| 1.39GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.39GB / 1.44GB, 61.4MB/s  
+New Data Upload               :  96%|█████████▌| 1.37GB / 1.43GB, 60.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  70%|██████▉   | 1.05GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  70%|██████▉   | 1.05GB / 1.51GB, 46.3MB/s  
-New Data Upload               :  69%|██████▉   | 1.04GB / 1.50GB, 45.5MB/s  [A
+  ...robe/phonevault-state.tar:  96%|█████████▋| 1.39GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▋| 1.39GB / 1.44GB, 61.5MB/s  
+New Data Upload               :  96%|█████████▋| 1.38GB / 1.43GB, 60.8MB/s  [A
 
-  ...robe/phonevault-state.tar:  70%|██████▉   | 1.06GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  70%|██████▉   | 1.06GB / 1.51GB, 46.3MB/s  
-New Data Upload               :  70%|██████▉   | 1.04GB / 1.50GB, 45.5MB/s  [A
+  ...robe/phonevault-state.tar:  97%|█████████▋| 1.40GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.40GB / 1.44GB, 61.4MB/s  
+New Data Upload               :  97%|█████████▋| 1.38GB / 1.43GB, 60.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  70%|███████   | 1.07GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  70%|███████   | 1.07GB / 1.51GB, 46.6MB/s  
-New Data Upload               :  70%|███████   | 1.05GB / 1.50GB, 45.9MB/s  [A
+  ...robe/phonevault-state.tar:  97%|█████████▋| 1.40GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.40GB / 1.44GB, 61.3MB/s  
+New Data Upload               :  97%|█████████▋| 1.39GB / 1.43GB, 60.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  71%|███████   | 1.07GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  71%|███████   | 1.07GB / 1.51GB, 46.8MB/s  
-New Data Upload               :  71%|███████   | 1.06GB / 1.50GB, 46.0MB/s  [A
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.41GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.41GB / 1.44GB, 61.4MB/s  
+New Data Upload               :  98%|█████████▊| 1.40GB / 1.43GB, 60.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  71%|███████   | 1.08GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  71%|███████   | 1.08GB / 1.51GB, 46.7MB/s  
-New Data Upload               :  71%|███████   | 1.06GB / 1.50GB, 46.0MB/s  [A
+  ...robe/phonevault-state.tar:  98%|█████████▊| 1.41GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.41GB / 1.44GB, 61.2MB/s  
+New Data Upload               :  98%|█████████▊| 1.40GB / 1.43GB, 60.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  72%|███████▏  | 1.08GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  72%|███████▏  | 1.08GB / 1.51GB, 46.8MB/s  
-New Data Upload               :  71%|███████▏  | 1.07GB / 1.50GB, 46.0MB/s  [A
+  ...robe/phonevault-state.tar:  99%|█████████▊| 1.42GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▊| 1.42GB / 1.44GB, 61.4MB/s  
+New Data Upload               :  99%|█████████▊| 1.41GB / 1.43GB, 60.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  72%|███████▏  | 1.09GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  72%|███████▏  | 1.09GB / 1.51GB, 46.9MB/s  
-New Data Upload               :  72%|███████▏  | 1.07GB / 1.50GB, 46.2MB/s  [A
+  ...robe/phonevault-state.tar:  99%|█████████▉| 1.43GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.43GB / 1.44GB, 61.4MB/s  
+New Data Upload               :  99%|█████████▉| 1.41GB / 1.43GB, 60.7MB/s  [A
 
-  ...robe/phonevault-state.tar:  73%|███████▎  | 1.10GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  73%|███████▎  | 1.10GB / 1.51GB, 47.2MB/s  
-New Data Upload               :  72%|███████▏  | 1.08GB / 1.50GB, 46.4MB/s  [A
+  ...robe/phonevault-state.tar:  99%|█████████▉| 1.43GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.43GB / 1.44GB, 61.1MB/s  
+New Data Upload               :  99%|█████████▉| 1.42GB / 1.43GB, 60.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  73%|███████▎  | 1.10GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  73%|███████▎  | 1.10GB / 1.51GB, 47.4MB/s  
-New Data Upload               :  73%|███████▎  | 1.09GB / 1.50GB, 46.6MB/s  [A
+  ...robe/phonevault-state.tar:  99%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.44GB / 1.44GB, 61.0MB/s  
+New Data Upload               :  99%|█████████▉| 1.42GB / 1.43GB, 60.4MB/s  [A
 
-  ...robe/phonevault-state.tar:  73%|███████▎  | 1.11GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  73%|███████▎  | 1.11GB / 1.51GB, 47.4MB/s  
-New Data Upload               :  73%|███████▎  | 1.09GB / 1.50GB, 46.7MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.44GB / 1.44GB, 61.0MB/s  
+New Data Upload               : 100%|█████████▉| 1.43GB / 1.43GB, 60.3MB/s  [A
 
-  ...robe/phonevault-state.tar:  74%|███████▎  | 1.11GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  74%|███████▎  | 1.11GB / 1.51GB, 47.3MB/s  
-New Data Upload               :  73%|███████▎  | 1.10GB / 1.50GB, 46.6MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.44GB / 1.44GB, 60.7MB/s  
+New Data Upload               : 100%|█████████▉| 1.43GB / 1.43GB, 60.0MB/s  [A
 
-  ...robe/phonevault-state.tar:  74%|███████▍  | 1.12GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  74%|███████▍  | 1.12GB / 1.51GB, 47.5MB/s  
-New Data Upload               :  74%|███████▍  | 1.10GB / 1.50GB, 46.8MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  75%|███████▍  | 1.13GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  75%|███████▍  | 1.13GB / 1.51GB, 47.7MB/s  
-New Data Upload               :  74%|███████▍  | 1.11GB / 1.50GB, 47.0MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  75%|███████▍  | 1.13GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  75%|███████▍  | 1.13GB / 1.51GB, 47.8MB/s  
-New Data Upload               :  75%|███████▍  | 1.12GB / 1.50GB, 47.1MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  75%|███████▌  | 1.14GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  75%|███████▌  | 1.14GB / 1.51GB, 48.0MB/s  
-New Data Upload               :  75%|███████▌  | 1.13GB / 1.50GB, 47.3MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.44GB / 1.44GB, 58.9MB/s  
+New Data Upload               : 100%|█████████▉| 1.43GB / 1.43GB, 58.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  76%|███████▌  | 1.15GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  76%|███████▌  | 1.15GB / 1.51GB, 48.2MB/s  
-New Data Upload               :  76%|███████▌  | 1.13GB / 1.50GB, 47.5MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  76%|███████▋  | 1.15GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  76%|███████▋  | 1.15GB / 1.51GB, 48.2MB/s  
-New Data Upload               :  76%|███████▌  | 1.14GB / 1.50GB, 47.5MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  77%|███████▋  | 1.16GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  | 1.16GB / 1.51GB, 48.5MB/s  
-New Data Upload               :  77%|███████▋  | 1.15GB / 1.50GB, 47.8MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  77%|███████▋  | 1.17GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  | 1.17GB / 1.51GB, 48.6MB/s  
-New Data Upload               :  77%|███████▋  | 1.15GB / 1.50GB, 47.9MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.44GB / 1.44GB, 57.1MB/s  
+New Data Upload               : 100%|█████████▉| 1.43GB / 1.43GB, 56.5MB/s  [A
 
-  ...robe/phonevault-state.tar:  78%|███████▊  | 1.18GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  | 1.18GB / 1.51GB, 48.9MB/s  
-New Data Upload               :  78%|███████▊  | 1.16GB / 1.50GB, 48.2MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.44GB / 1.44GB, 56.7MB/s  
+New Data Upload               : 100%|█████████▉| 1.43GB / 1.43GB, 56.1MB/s  [A
 
-  ...robe/phonevault-state.tar:  78%|███████▊  | 1.18GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  | 1.18GB / 1.51GB, 48.9MB/s  
-New Data Upload               :  78%|███████▊  | 1.17GB / 1.50GB, 48.3MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  79%|███████▉  | 1.19GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  79%|███████▉  | 1.19GB / 1.51GB, 49.2MB/s  
-New Data Upload               :  79%|███████▊  | 1.18GB / 1.50GB, 48.6MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.44GB / 1.44GB, 55.8MB/s  
+New Data Upload               : 100%|█████████▉| 1.43GB / 1.43GB, 55.2MB/s  [A
 
-  ...robe/phonevault-state.tar:  79%|███████▉  | 1.20GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  79%|███████▉  | 1.20GB / 1.51GB, 49.3MB/s  
-New Data Upload               :  79%|███████▉  | 1.18GB / 1.50GB, 48.6MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  80%|███████▉  | 1.21GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  80%|███████▉  | 1.21GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  80%|███████▉  | 1.19GB / 1.50GB, 48.8MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  80%|████████  | 1.21GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  80%|████████  | 1.21GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  80%|███████▉  | 1.20GB / 1.50GB, 48.9MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[A
 
-  ...robe/phonevault-state.tar:  80%|████████  | 1.22GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  80%|████████  | 1.22GB / 1.51GB, 49.6MB/s  
-New Data Upload               :  80%|████████  | 1.20GB / 1.50GB, 48.9MB/s  [A
+  ...robe/phonevault-state.tar: 100%|█████████▉| 1.44GB / 1.44GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.44GB / 1.44GB, 54.2MB/s  
+New Data Upload               : 100%|█████████▉| 1.43GB / 1.43GB, 53.6MB/s  [A
 
-  ...robe/phonevault-state.tar:  81%|████████  | 1.22GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  81%|████████  | 1.22GB / 1.51GB, 49.4MB/s  
-New Data Upload               :  80%|████████  | 1.20GB / 1.50GB, 48.8MB/s  [A
-
-  ...robe/phonevault-state.tar:  81%|████████  | 1.23GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  81%|████████  | 1.23GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  81%|████████  | 1.21GB / 1.50GB, 48.8MB/s  [A
-
-  ...robe/phonevault-state.tar:  81%|████████  | 1.23GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  81%|████████  | 1.23GB / 1.51GB, 49.3MB/s  
-New Data Upload               :  81%|████████  | 1.21GB / 1.50GB, 48.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  82%|████████▏ | 1.24GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ | 1.24GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  82%|████████▏ | 1.22GB / 1.50GB, 48.9MB/s  [A
-
-  ...robe/phonevault-state.tar:  82%|████████▏ | 1.24GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ | 1.24GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  82%|████████▏ | 1.22GB / 1.50GB, 48.9MB/s  [A
-
-  ...robe/phonevault-state.tar:  82%|████████▏ | 1.24GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ | 1.24GB / 1.51GB, 49.4MB/s  
-New Data Upload               :  82%|████████▏ | 1.23GB / 1.50GB, 48.8MB/s  [A
-
-  ...robe/phonevault-state.tar:  83%|████████▎ | 1.25GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ | 1.25GB / 1.51GB, 49.4MB/s  
-New Data Upload               :  82%|████████▏ | 1.23GB / 1.50GB, 48.8MB/s  [A
-
-  ...robe/phonevault-state.tar:  83%|████████▎ | 1.26GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ | 1.26GB / 1.51GB, 49.6MB/s  
-New Data Upload               :  83%|████████▎ | 1.24GB / 1.50GB, 49.0MB/s  [A
-
-  ...robe/phonevault-state.tar:  83%|████████▎ | 1.26GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ | 1.26GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  83%|████████▎ | 1.25GB / 1.50GB, 48.9MB/s  [A
-
-  ...robe/phonevault-state.tar:  84%|████████▍ | 1.27GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.27GB / 1.51GB, 49.6MB/s  
-New Data Upload               :  84%|████████▎ | 1.25GB / 1.50GB, 49.0MB/s  [A
-
-  ...robe/phonevault-state.tar:  84%|████████▍ | 1.27GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.27GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  84%|████████▍ | 1.25GB / 1.50GB, 48.9MB/s  [A
-
-  ...robe/phonevault-state.tar:  84%|████████▍ | 1.28GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  84%|████████▍ | 1.28GB / 1.51GB, 49.6MB/s  
-New Data Upload               :  84%|████████▍ | 1.26GB / 1.50GB, 49.0MB/s  [A
-
-  ...robe/phonevault-state.tar:  85%|████████▍ | 1.28GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  85%|████████▍ | 1.28GB / 1.51GB, 49.6MB/s  
-New Data Upload               :  85%|████████▍ | 1.27GB / 1.50GB, 49.0MB/s  [A
-
-  ...robe/phonevault-state.tar:  85%|████████▌ | 1.29GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  85%|████████▌ | 1.29GB / 1.51GB, 49.7MB/s  
-New Data Upload               :  85%|████████▌ | 1.27GB / 1.50GB, 49.1MB/s  [A
-
-  ...robe/phonevault-state.tar:  86%|████████▌ | 1.30GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.30GB / 1.51GB, 49.8MB/s  
-New Data Upload               :  86%|████████▌ | 1.28GB / 1.50GB, 49.3MB/s  [A
-
-  ...robe/phonevault-state.tar:  86%|████████▌ | 1.30GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 1.30GB / 1.51GB, 49.7MB/s  
-New Data Upload               :  86%|████████▌ | 1.28GB / 1.50GB, 49.1MB/s  [A
-
-  ...robe/phonevault-state.tar:  86%|████████▋ | 1.31GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  86%|████████▋ | 1.31GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  86%|████████▋ | 1.29GB / 1.50GB, 49.4MB/s  [A
-
-  ...robe/phonevault-state.tar:  87%|████████▋ | 1.31GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.31GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  87%|████████▋ | 1.30GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  87%|████████▋ | 1.32GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  87%|████████▋ | 1.32GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  87%|████████▋ | 1.30GB / 1.50GB, 49.4MB/s  [A
-
-  ...robe/phonevault-state.tar:  88%|████████▊ | 1.32GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.32GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  87%|████████▋ | 1.31GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  88%|████████▊ | 1.33GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.33GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  88%|████████▊ | 1.31GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  88%|████████▊ | 1.33GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.33GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  88%|████████▊ | 1.32GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  88%|████████▊ | 1.34GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  88%|████████▊ | 1.34GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  88%|████████▊ | 1.32GB / 1.50GB, 49.4MB/s  [A
-
-  ...robe/phonevault-state.tar:  89%|████████▉ | 1.35GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.35GB / 1.51GB, 50.2MB/s  
-New Data Upload               :  89%|████████▉ | 1.33GB / 1.50GB, 49.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  89%|████████▉ | 1.35GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  89%|████████▉ | 1.35GB / 1.51GB, 50.2MB/s  
-New Data Upload               :  89%|████████▉ | 1.33GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  90%|████████▉ | 1.35GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.35GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  90%|████████▉ | 1.34GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  90%|████████▉ | 1.36GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  90%|████████▉ | 1.36GB / 1.51GB, 50.2MB/s  
-New Data Upload               :  90%|████████▉ | 1.35GB / 1.50GB, 49.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  90%|█████████ | 1.37GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 1.37GB / 1.51GB, 50.2MB/s  
-New Data Upload               :  90%|█████████ | 1.35GB / 1.50GB, 49.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  91%|█████████ | 1.37GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.37GB / 1.51GB, 50.2MB/s  
-New Data Upload               :  91%|█████████ | 1.35GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  91%|█████████ | 1.37GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  91%|█████████ | 1.37GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  91%|█████████ | 1.36GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  91%|█████████▏| 1.38GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  91%|█████████▏| 1.38GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  91%|█████████ | 1.36GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  92%|█████████▏| 1.38GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.38GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  91%|█████████▏| 1.37GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  92%|█████████▏| 1.39GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.39GB / 1.51GB, 50.2MB/s  
-New Data Upload               :  92%|█████████▏| 1.38GB / 1.50GB, 49.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  92%|█████████▏| 1.39GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.39GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  92%|█████████▏| 1.38GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  92%|█████████▏| 1.40GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  92%|█████████▏| 1.40GB / 1.51GB, 49.9MB/s  
-New Data Upload               :  92%|█████████▏| 1.38GB / 1.50GB, 49.4MB/s  [A
-
-  ...robe/phonevault-state.tar:  93%|█████████▎| 1.40GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.40GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  93%|█████████▎| 1.39GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  93%|█████████▎| 1.41GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  93%|█████████▎| 1.41GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  93%|█████████▎| 1.39GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  94%|█████████▎| 1.41GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▎| 1.41GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  93%|█████████▎| 1.40GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  94%|█████████▍| 1.42GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.42GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  94%|█████████▍| 1.40GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  94%|█████████▍| 1.42GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 1.42GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  94%|█████████▍| 1.41GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  95%|█████████▍| 1.43GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.43GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  95%|█████████▍| 1.41GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  95%|█████████▍| 1.44GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▍| 1.44GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  95%|█████████▍| 1.42GB / 1.50GB, 49.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  95%|█████████▌| 1.44GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.44GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  95%|█████████▌| 1.43GB / 1.50GB, 49.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  95%|█████████▌| 1.44GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  95%|█████████▌| 1.44GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  95%|█████████▌| 1.43GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  96%|█████████▌| 1.45GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.45GB / 1.51GB, 50.1MB/s  
-New Data Upload               :  96%|█████████▌| 1.44GB / 1.50GB, 49.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  96%|█████████▌| 1.45GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▌| 1.45GB / 1.51GB, 50.0MB/s  
-New Data Upload               :  96%|█████████▌| 1.44GB / 1.50GB, 49.5MB/s  [A
-
-  ...robe/phonevault-state.tar:  96%|█████████▋| 1.46GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  96%|█████████▋| 1.46GB / 1.51GB, 49.8MB/s  
-New Data Upload               :  96%|█████████▋| 1.44GB / 1.50GB, 49.3MB/s  [A
-
-  ...robe/phonevault-state.tar:  97%|█████████▋| 1.46GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.46GB / 1.51GB, 49.8MB/s  
-New Data Upload               :  97%|█████████▋| 1.45GB / 1.50GB, 49.3MB/s  [A
-
-  ...robe/phonevault-state.tar:  97%|█████████▋| 1.46GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.46GB / 1.51GB, 49.7MB/s  
-New Data Upload               :  97%|█████████▋| 1.45GB / 1.50GB, 49.2MB/s  [A
-
-  ...robe/phonevault-state.tar:  97%|█████████▋| 1.47GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.47GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  97%|█████████▋| 1.45GB / 1.50GB, 49.1MB/s  [A
-
-  ...robe/phonevault-state.tar:  97%|█████████▋| 1.47GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 1.47GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  97%|█████████▋| 1.46GB / 1.50GB, 49.1MB/s  [A
-
-  ...robe/phonevault-state.tar:  98%|█████████▊| 1.48GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.48GB / 1.51GB, 49.5MB/s  
-New Data Upload               :  98%|█████████▊| 1.46GB / 1.50GB, 49.1MB/s  [A
-
-  ...robe/phonevault-state.tar:  98%|█████████▊| 1.48GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.48GB / 1.51GB, 49.3MB/s  
-New Data Upload               :  98%|█████████▊| 1.46GB / 1.50GB, 48.9MB/s  [A
-
-  ...robe/phonevault-state.tar:  98%|█████████▊| 1.48GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.48GB / 1.51GB, 49.3MB/s  
-New Data Upload               :  98%|█████████▊| 1.47GB / 1.50GB, 48.9MB/s  [A
-
-  ...robe/phonevault-state.tar:  98%|█████████▊| 1.49GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  98%|█████████▊| 1.49GB / 1.51GB, 49.3MB/s  
-New Data Upload               :  98%|█████████▊| 1.47GB / 1.50GB, 48.9MB/s  [A
-
-  ...robe/phonevault-state.tar:  99%|█████████▉| 1.49GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.49GB / 1.51GB, 49.3MB/s  
-New Data Upload               :  99%|█████████▉| 1.48GB / 1.50GB, 48.8MB/s  [A
-
-  ...robe/phonevault-state.tar:  99%|█████████▉| 1.50GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.50GB / 1.51GB, 49.1MB/s  
-New Data Upload               :  99%|█████████▉| 1.48GB / 1.50GB, 48.7MB/s  [A
-
-  ...robe/phonevault-state.tar:  99%|█████████▉| 1.50GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.50GB / 1.51GB, 49.0MB/s  
-New Data Upload               :  99%|█████████▉| 1.48GB / 1.50GB, 48.6MB/s  [A
-
-  ...robe/phonevault-state.tar:  99%|█████████▉| 1.50GB / 1.51GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 1.50GB / 1.51GB, 49.0MB/s  
-New Data Upload               :  99%|█████████▉| 1.49GB / 1.50GB, 48.5MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 48.8MB/s  
-New Data Upload               : 100%|█████████▉| 1.49GB / 1.50GB, 48.4MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 48.6MB/s  
-New Data Upload               : 100%|█████████▉| 1.49GB / 1.50GB, 48.1MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 48.3MB/s  
-New Data Upload               : 100%|█████████▉| 1.49GB / 1.50GB, 47.9MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 48.0MB/s  
-New Data Upload               : 100%|█████████▉| 1.50GB / 1.50GB, 47.6MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 47.7MB/s  
-New Data Upload               : 100%|█████████▉| 1.50GB / 1.50GB, 47.3MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 47.4MB/s  
-New Data Upload               : 100%|█████████▉| 1.50GB / 1.50GB, 47.0MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 46.0MB/s  
-New Data Upload               : 100%|█████████▉| 1.50GB / 1.50GB, 45.6MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 45.0MB/s  
-New Data Upload               : 100%|█████████▉| 1.50GB / 1.50GB, 44.7MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 1.51GB / 1.51GB, 44.7MB/s  
-New Data Upload               : 100%|█████████▉| 1.50GB / 1.50GB, 44.3MB/s  [A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|█████████▉| 1.51GB / 1.51GB            [A[A
-
-  ...robe/phonevault-state.tar: 100%|██████████| 1.51GB / 1.51GB            [A[AProcessing Files (1 / 1)      : 100%|██████████| 1.51GB / 1.51GB, 43.4MB/s  
-New Data Upload               : 100%|██████████| 1.50GB / 1.50GB, 43.1MB/s  [A
+  ...robe/phonevault-state.tar: 100%|██████████| 1.44GB / 1.44GB            [A[AProcessing Files (1 / 1)      : 100%|██████████| 1.44GB / 1.44GB, 53.8MB/s  
+New Data Upload               : 100%|██████████| 1.43GB / 1.43GB, 53.2MB/s  [A
 
 
 Validating                    :           |   0%            [A[A[A
@@ -1434,34 +1205,34 @@ vault_repo=jasveerai92/phonevault-one phone=one
 
 Validating                    :           |   0%            [A[A[A
 
-  ...robe/phonevault-state.tar: 100%|██████████| 1.51GB / 1.51GB            [A[A
+  ...robe/phonevault-state.tar: 100%|██████████| 1.44GB / 1.44GB            [A[A
 
 
 Validating                    :           |   0%            [A[A[A
 
-  ...robe/phonevault-state.tar: 100%|██████████| 1.51GB / 1.51GB            [A[A
+  ...robe/phonevault-state.tar: 100%|██████████| 1.44GB / 1.44GB            [A[A
 
 
 Validating                    :           |   0%            [A[A[A
 
-  ...robe/phonevault-state.tar: 100%|██████████| 1.51GB / 1.51GB            [A[A
-
-
-Validating                    : █████████▎|  93%            [A[A[A
-
-  ...robe/phonevault-state.tar: 100%|██████████| 1.51GB / 1.51GB            [A[A
+  ...robe/phonevault-state.tar: 100%|██████████| 1.44GB / 1.44GB            [A[A
 
 
 Validating                    : ██████████| 100%            [A[A[A
 
-  ...robe/phonevault-state.tar: 100%|██████████| 1.51GB / 1.51GB            [A[A
+  ...robe/phonevault-state.tar: 100%|██████████| 1.44GB / 1.44GB            [A[A
 
 
-Validating                    : ██████████| 100%            [A[A[AProcessing Files (1 / 1)      : 100%|██████████| 1.51GB / 1.51GB, 42.0MB/s  
-New Data Upload               : 100%|██████████| 1.50GB / 1.50GB, 41.7MB/s  
+Validating                    : ██████████| 100%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|██████████| 1.44GB / 1.44GB            [A[A
+
+
+Validating                    : ██████████| 100%            [A[A[AProcessing Files (1 / 1)      : 100%|██████████| 1.44GB / 1.44GB, 52.2MB/s  
+New Data Upload               : 100%|██████████| 1.43GB / 1.43GB, 51.6MB/s  
 Validating                    : ██████████| 100%            
-  ...robe/phonevault-state.tar: 100%|██████████| 1.51GB / 1.51GB            
-VAULT PUT OK repo=jasveerai92/phonevault-one prefix=pkg-74de6ad4 pack_sha256=74de6ad4bc0a7d48d0a263e63fbf042a7ef79646434a605057cae06f5c8af44e bytes=1512079360
+  ...robe/phonevault-state.tar: 100%|██████████| 1.44GB / 1.44GB            
+VAULT PUT OK repo=jasveerai92/phonevault-one prefix=pkg-cc908c5d pack_sha256=cc908c5d629356537da7fefdbde5fa65137292a234a674d8697ccd80ea60df55 bytes=1444515840
 VAULT_OK=1
 
 ########## .pv-evidence-final/08a-roundtrip2-n.txt ##########
