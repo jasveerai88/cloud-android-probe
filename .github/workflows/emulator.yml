@@ -4413,9 +4413,23 @@ jobs:
                   if [ -n "$HEALTH" ]; then echo "live health OK (poll $i)"; else echo "LIVE: FAILED - origin health failed in 90s; tunnel NOT opened, nothing published"; LVOK=0; fi
                 fi
                 if [ "$LVOK" = "1" ]; then
+                  TUN_KIND=""
                   "$LV/cloudflared" tunnel --no-autoupdate --url http://127.0.0.1:8080 > "$LV/cf.log" 2>&1 & echo $! > "$LV/cf.pid"
                   TUN=""; for i in $(seq 1 30); do TUN="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$LV/cf.log" 2>/dev/null | head -1)"; [ -n "$TUN" ] && break; sleep 2; done
-                  if [ -z "$TUN" ]; then echo "LIVE: FAILED - cloudflared produced no trycloudflare URL in 60s (cf log tail:)"; tail -10 "$LV/cf.log" 2>/dev/null; LVOK=0; fi
+                  if [ -n "$TUN" ]; then TUN_KIND="cf"; fi
+                  if [ -z "$TUN" ]; then
+                    echo "cloudflared produced no trycloudflare URL in 60s (cf log tail:)"; tail -10 "$LV/cf.log" 2>/dev/null
+                    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:8080 serveo.net > "$LV/ssh.log" 2>&1 & echo $! > "$LV/cf.pid"
+                    TUN=""; for i in $(seq 1 30); do TUN="$(grep 'Forwarding HTTP traffic from' "$LV/ssh.log" 2>/dev/null | grep -oE 'https://[a-zA-Z0-9.-]+' | head -1)"; [ -n "$TUN" ] && break; sleep 2; done
+                    if [ -n "$TUN" ]; then TUN_KIND="ssh"; echo "LIVE: cloudflared failed - fell back to SSH tunnel (serveo)"; fi
+                  fi
+                  if [ -z "$TUN" ]; then
+                    echo "serveo produced no forwarding URL in 60s (ssh log tail:)"; tail -10 "$LV/ssh.log" 2>/dev/null
+                    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:8080 nokey@localhost.run > "$LV/ssh2.log" 2>&1 & echo $! > "$LV/cf.pid"
+                    TUN=""; for i in $(seq 1 30); do TUN="$(grep 'Forwarding HTTP traffic from' "$LV/ssh2.log" 2>/dev/null | grep -oE 'https://[a-zA-Z0-9.-]+' | head -1)"; [ -n "$TUN" ] && break; sleep 2; done
+                    if [ -n "$TUN" ]; then TUN_KIND="ssh2"; echo "LIVE: cloudflared + serveo failed - fell back to SSH tunnel (localhost.run)"; fi
+                  fi
+                  if [ -z "$TUN" ]; then echo "LIVE: FAILED - all tunnels failed: cloudflared no trycloudflare URL in 60s, serveo no forwarding URL in 60s, localhost.run no forwarding URL in 60s (ssh2 log tail:)"; tail -10 "$LV/ssh2.log" 2>/dev/null; LVOK=0; fi
                   if [ "$LVOK" = "1" ]; then
                     PUB=""; PN=0; PT0=$(date +%s)
                     while [ -z "$PUB" ] && [ $(( $(date +%s) - PT0 )) -lt 150 ]; do
@@ -4448,14 +4462,26 @@ jobs:
                     fi
                     if [ "$(adb -s emulator-5554 get-state 2>/dev/null | tr -d '\r')" = "device" ]; then MISS_EMU=0; else MISS_EMU=$((MISS_EMU+1)); fi
                     if [ "$MISS_EMU" -ge 3 ]; then DIED="emulator"; break; fi
-                    # tunnel watchdog: cloudflared is the flaky part (run #109) - restart it in place instead of ending the window
+                    # tunnel watchdog: the tunnel is the flaky part (run #109) - restart the active kind in place instead of ending the window
                     if ! kill -0 "$(cat "$LV/cf.pid" 2>/dev/null)" 2>/dev/null; then
                       if [ "$CF_RESTARTS" -ge 5 ]; then DIED="tunnel"; break; fi
                       CF_RESTARTS=$((CF_RESTARTS+1))
-                      CFLOG="$LV/cf-r$CF_RESTARTS.log"
-                      "$LV/cloudflared" tunnel --no-autoupdate --url http://127.0.0.1:8080 > "$CFLOG" 2>&1 & echo $! > "$LV/cf.pid"
-                      TUN=""; for i in $(seq 1 30); do TUN="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$CFLOG" 2>/dev/null | head -1)"; [ -n "$TUN" ] && break; sleep 2; done
-                      if [ -z "$TUN" ]; then echo "LIVE: tunnel restart $CF_RESTARTS produced no trycloudflare URL in 60s (cf log tail:)"; tail -10 "$CFLOG" 2>/dev/null; DIED="tunnel"; break; fi
+                      if [ "$TUN_KIND" = "ssh" ]; then
+                        CFLOG="$LV/ssh-r$CF_RESTARTS.log"
+                        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:8080 serveo.net > "$CFLOG" 2>&1 & echo $! > "$LV/cf.pid"
+                        TUN=""; for i in $(seq 1 30); do TUN="$(grep 'Forwarding HTTP traffic from' "$CFLOG" 2>/dev/null | grep -oE 'https://[a-zA-Z0-9.-]+' | head -1)"; [ -n "$TUN" ] && break; sleep 2; done
+                        if [ -z "$TUN" ]; then echo "LIVE: tunnel restart $CF_RESTARTS (serveo) produced no forwarding URL in 60s (ssh log tail:)"; tail -10 "$CFLOG" 2>/dev/null; DIED="tunnel"; break; fi
+                      elif [ "$TUN_KIND" = "ssh2" ]; then
+                        CFLOG="$LV/ssh-r$CF_RESTARTS.log"
+                        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:8080 nokey@localhost.run > "$CFLOG" 2>&1 & echo $! > "$LV/cf.pid"
+                        TUN=""; for i in $(seq 1 30); do TUN="$(grep 'Forwarding HTTP traffic from' "$CFLOG" 2>/dev/null | grep -oE 'https://[a-zA-Z0-9.-]+' | head -1)"; [ -n "$TUN" ] && break; sleep 2; done
+                        if [ -z "$TUN" ]; then echo "LIVE: tunnel restart $CF_RESTARTS (localhost.run) produced no forwarding URL in 60s (ssh log tail:)"; tail -10 "$CFLOG" 2>/dev/null; DIED="tunnel"; break; fi
+                      else
+                        CFLOG="$LV/cf-r$CF_RESTARTS.log"
+                        "$LV/cloudflared" tunnel --no-autoupdate --url http://127.0.0.1:8080 > "$CFLOG" 2>&1 & echo $! > "$LV/cf.pid"
+                        TUN=""; for i in $(seq 1 30); do TUN="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$CFLOG" 2>/dev/null | head -1)"; [ -n "$TUN" ] && break; sleep 2; done
+                        if [ -z "$TUN" ]; then echo "LIVE: tunnel restart $CF_RESTARTS produced no trycloudflare URL in 60s (cf log tail:)"; tail -10 "$CFLOG" 2>/dev/null; DIED="tunnel"; break; fi
+                      fi
                       LIVE_LINE="LIVE: url=$TUN/$TOKEN/fallback/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window opened=$OPENED_TS"
                       if [ -n "$LP_OPEN" ]; then PV_LP_TOKEN="${{ github.token }}" bash phonevault/liveview/live-publish-v53.sh open "$LIVE_LINE"; fi
                       echo "LIVE: tunnel died - restarted, new url published (restart $CF_RESTARTS of 5)"
