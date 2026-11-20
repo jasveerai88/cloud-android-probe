@@ -1,0 +1,68 @@
+name: tunnel-probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Start marker HTTP server on 18080
+        run: |
+          mkdir -p /tmp/probe && cd /tmp/probe
+          echo "PHONEVAULT-PROBE-MARKER" > index.html
+          nohup python3 -m http.server 18080 > server.log 2>&1 &
+          sleep 2
+          curl -s http://127.0.0.1:18080/ && echo "LOCAL SERVER OK"
+
+      - name: Probe localhost.run
+        run: |
+          cd /tmp/probe
+          rm -f ssh1.log
+          timeout 75 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -R 80:127.0.0.1:18080 nokey@localhost.run > ssh1.log 2>&1 &
+          URL=""
+          for i in $(seq 1 30); do
+            URL="$(grep -oE 'https://[a-zA-Z0-9.-]+\.(lhr\.life|localhost\.run)[a-zA-Z0-9./_-]*' ssh1.log 2>/dev/null | head -1)"
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          echo "PROBE_LOCALHOSTRUN_URL=${URL:-NONE}"
+          if [ -n "$URL" ]; then
+            echo "--- curl tunnel root ---"
+            curl -s --max-time 15 "$URL/" || echo "CURL ROOT FAILED"
+            echo "--- curl tunnel path /abc/def ---"
+            curl -s --max-time 15 -o /dev/null -w '%{http_code}\n' "$URL/abc/def" || echo "CURL PATH FAILED"
+            echo "--- server log (path check) ---"
+            cat server.log
+          fi
+          echo "--- ssh1.log (full) ---"
+          cat ssh1.log
+          pkill -f "localhost.run" 2>/dev/null || true
+          sleep 2
+
+      - name: Probe serveo
+        run: |
+          cd /tmp/probe
+          rm -f ssh2.log server.log
+          nohup python3 -m http.server 18080 > server.log 2>&1 &
+          sleep 1
+          timeout 75 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -R 80:127.0.0.1:18080 serveo.net > ssh2.log 2>&1 &
+          URL=""
+          for i in $(seq 1 30); do
+            URL="$(grep -oE 'https://[a-zA-Z0-9.-]+\.(serveo\.net|serveousercontent\.com)[a-zA-Z0-9./_-]*' ssh2.log 2>/dev/null | head -1)"
+            [ -n "$URL" ] && break
+            sleep 2
+          done
+          echo "PROBE_SERVEO_URL=${URL:-NONE}"
+          if [ -n "$URL" ]; then
+            echo "--- curl tunnel root ---"
+            curl -s --max-time 15 "$URL/" || echo "CURL ROOT FAILED"
+            echo "--- curl tunnel path /abc/def ---"
+            curl -s --max-time 15 -o /dev/null -w '%{http_code}\n' "$URL/abc/def" || echo "CURL PATH FAILED"
+            echo "--- server log (path check) ---"
+            cat server.log
+          fi
+          echo "--- ssh2.log (full) ---"
+          cat ssh2.log
+          pkill -f "serveo.net" 2>/dev/null || true
