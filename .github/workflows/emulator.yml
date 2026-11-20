@@ -4425,9 +4425,9 @@ jobs:
                     if [ -z "$PUB" ]; then echo "LIVE: FAILED - public URL not serving in ~150s (last http=${PC:-none}); nothing published"; LVOK=0; fi
                   fi
                   if [ "$LVOK" = "1" ]; then
-                    echo "LIVE: url=$TUN/$TOKEN/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window (the tunnel is killed in this step) fallback=$TUN/$TOKEN/fallback/ control=tap + buttons + text on the page"
-                    { echo "## PhoneVault LIVE VIEW (v5.1)"; echo "LIVE: url=$TUN/$TOKEN/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window fallback=$TUN/$TOKEN/fallback/"; echo "Open during the window (NOT video)."; } >> "$GITHUB_STEP_SUMMARY"
-                    LIVE_LINE="LIVE: url=$TUN/$TOKEN/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window opened=$(date -u +%FT%TZ)"
+                    echo "LIVE: url=$TUN/$TOKEN/fallback/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window (the tunnel is killed in this step) fallback=$TUN/$TOKEN/fallback/ control=tap + buttons + text on the page"
+                    { echo "## PhoneVault LIVE VIEW (v5.1)"; echo "LIVE: url=$TUN/$TOKEN/fallback/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window fallback=$TUN/$TOKEN/fallback/"; echo "Open during the window (NOT video)."; } >> "$GITHUB_STEP_SUMMARY"
+                    LIVE_LINE="LIVE: url=$TUN/$TOKEN/fallback/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window opened=$(date -u +%FT%TZ)"
                     LP_OPEN=""; if [ -f phonevault/liveview/live-publish-v53.sh ]; then LP_OPEN=1; PV_LP_TOKEN="${{ github.token }}" bash phonevault/liveview/live-publish-v53.sh open "$LIVE_LINE"; else echo "LIVE PUBLISH: WARNING - live-publish.sh missing; link in log + Summary only"; fi
                     PUB_TS=$(date +%s)
                   fi
