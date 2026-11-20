@@ -8,9 +8,9 @@ v3.7 changes over v3.6, from the roundtrip2 run No.13 verdict (raw output person
 v3.8 changes over v3.7, from the roundtrip3 run No.15 findings (raw output personally verified by Atlas): attempt S2 RAN but its verdict was polluted by workflow bugs (the /sdcard marker push failed at birth - Operation not permitted - so marker_ok was 0 from the start; the pack tar then TRUNCATED with tar_rc=2 on a full disk while PACK_OK=1 still printed, so snapshots/pv1 vanished on extraction and the boot-2 verdict read an EMPTY certificate); attempt C never ran (birth boot flake). v3.8 fixes, in order: MARKER - written by adb root to /data/local/tmp/phonevault-marker.txt (no FUSE layer), /sdcard demoted to a bounded-retry fallback, and a birth without a verified marker is NOT EVALUATED and never packed. PACK HYGIENE - PACK_OK requires tar_rc=0 and the AVD is never wiped under an untrusted pack; snapshots/default_boot (the emulator own 2.3 GB quick-boot cache, mutating at exit) is EXCLUDED; the integrity hash is computed after the tar exists, FROM the tar over its largest file, sealed into the attempt state handoff, and restore re-hashes the extracted file against it (match by construction). CERTIFICATE GATE - restore reads phonevault-version.txt FROM THE EXTRACTED FOLDER and asserts android_id non-empty + marker_ok=1 BEFORE booting; a failed gate is NOT EVALUATED, never IDENTITY LOST; the S restore additionally gates on snapshots/pv1/ram.bin existing non-empty, and if the restore boot log cannot show pv1 loading, even a matching identity is SNAPSHOT LOAD UNPROVEN, not SAME PHONE. BOOT ROBUSTNESS - waits raised to ~15 min with ONE in-attempt retry. Re-sequenced: attempt C (identity-as-code) FIRST, attempt S SECOND; each attempt is split into capture+pack and gated-restore+verdict steps because the fixed single steps exceed the per-step size gate. Everything else - graceful pack, runtime-read expected values, no hash or ID written into this workflow - is v3.7 unchanged.
 v3.9 changes over v3.8, from the roundtrip4 run No.17 failure (job FAILED in 7m 26s; the checker verified the output commit never landed: disk-full reported at job step 11 of 17, which is PhoneVault step 10 of 12 - roundtrip4 attempt C part 2 - and the final output step then had no room either; the run produced NO verdicts at all): the GitHub runner gives this job only ~14 GB of usable disk, and the SDK + system image + the AVD + multi-GB per-attempt state tars and snapshot payloads across two attempts eat it. v3.9 adds mode roundtrip5 = the roundtrip4 pair (attempt C FIRST, attempt S SECOND, every v3.8 gate unchanged) plus a DISK DISCIPLINE layer: (1) START-OF-JOB AUDIT in this step (section 0c): df -h before/after a CONSERVATIVE cleanup of standard runner junk this job never uses (the .NET SDK, the Haskell toolchain, Boost headers, hosted-toolcache Python/PyPy, pre-pulled docker images, and SDK system images OTHER than android-34 - cmdline-tools/emulator/platform-tools and the android-34 image are never touched); every removal is listed with its measured size. (2) PER-ATTEMPT CLEANUP: the moment an attempt verdict is sealed and its evidence copied out, that attempt local state tar (and, after attempt C, the restored AVD state files, under the same keep-list attempt S applies at its own start) is DELETED before the next attempt begins; df -h is printed at every attempt boundary. (3) MID-JOB DISK GUARD: a guard helper runs at the start of each roundtrip5 attempt step; free space under 2 GB seals that attempt as NOT EVALUATED (disk) and skips its body - a harness verdict, never a corrupted run and never evidence. (4) OUTPUT SURVIVAL: each attempt verdict is already copied into .pv-evidence-final the moment it is sealed; v3.9 additionally uploads that folder (text only, KBs) as its own artifact (phonevault-evidence) and writes both verdict lines to the GitHub step summary in the final step, BEFORE the output commit is attempted - a late disk-full can no longer swallow the verdicts. Everything else - graceful pack, certificate + snapshot gates, root marker path, boot retry, runtime-read expected values, no hash or ID written into this workflow - is v3.8 unchanged.
 v4.0 changes over v3.9, from the roundtrip5 run No.19 verdict (STATE.md has the sealed record): ROUNDTRIP5-C: IDENTITY RESTORED (code-applied) - identity-as-code is PROVEN (birth ID re-applied by root after a disk restore that woke with a different, re-initialised ID; survived the extra reboot); ROUNDTRIP5-S: IDENTITY LOST (clean) - snapshot route CLOSED on android-34 google_apis, as are disk-native transport (encryption wall) and no-lock birth. v4.0 adds NO experiment: it promotes attempt-C into production: two dispatch-only modes. BIRTH (07a) runs ONCE: fresh -wipe-data boot, root marker under the validity gate, capsule captured exactly as attempt C did, graceful stop, production pack (v3.9 hygiene: tar_rc=0, snapshots/ excluded, largest-file hash sealed + re-verified FROM the tar) with the capsule INSIDE the pack (pv-capsule.tar + capsule-manifest.txt members - a wake runs in a later run), certificate production=1 session=1 capsule_sha256 android_id marker_ok=1 born_utc, pack UPLOADED as phonevault-avd-state, sha256 printed. WAKE (07b/07c) is every later power-on: pin_run_id REQUIRED (birth or newest GOOD wake run, never newest-blind); certificate verified BEFORE extraction (android_id + marker_ok=1 + capsule re-hash + largest-file re-hash; failure = WAKE: NOT EVALUATED, certificate printed); clean hand-made folder, boot WITHOUT -wipe-data, control readings printed, capsule re-applied by root BEFORE any verdict read (tar at /, settings put LAST); WAKE: SAME PHONE only if ID + marker match after apply AND after a second reboot; then RE-PACKED with the same capsule, session+1, uploaded - state advances every wake. Full contract: phonevault/V40-NOTES.md. All earlier modes unchanged.
-run_started_utc: 2026-11-20T18:19:41Z
-workflow_run_number: 23
-workflow_run_id: 44791686349
+run_started_utc: 2026-11-20T18:39:21Z
+workflow_run_number: 24
+workflow_run_id: 44794799221
 workflow_run_attempt: 1
 mode: fresh (push-triggered runs are always fresh; restore and all roundtrip modes are dispatch-only; birth and wake (v4.0 production) are dispatch-only)
 note: artifact transport is NOT the vault - DESIGN.md section 5 chunk_vault/HF wiring replaces it for real sessions (build step 3)
@@ -19,14 +19,14 @@ RUNNER_OS=Linux RUNNER_ARCH=X64 ImageOS=ubuntu26 ImageVersion=20261116.202.1
 Linux runnervm0hi8g 7.0.0-1020-azure #21-Ubuntu SMP PREEMPT Tue Oct 27 22:34:38 UTC 2026 x86_64 GNU/Linux
 4
                total        used        free      shared  buff/cache   available
-Mem:            15Gi       968Mi        14Gi        44Mi       917Mi        14Gi
+Mem:            15Gi       925Mi        14Gi        44Mi       919Mi        14Gi
 Swap:          3.0Gi          0B       3.0Gi
 /dev/root       145G   58G   88G  40% /
-crw-rw---- 1 root kvm 10, 232 Nov 20 18:17 /dev/kvm
+crw-rw---- 1 root kvm 10, 232 Nov 20 18:31 /dev/kvm
 KVM_GATE: PRESENT
 ===== 0b kvm permissions (standard GitHub emulator step) =====
 KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
-crw-rw-rw- 1 root kvm 10, 232 Nov 20 18:19 /dev/kvm
+crw-rw-rw- 1 root kvm 10, 232 Nov 20 18:39 /dev/kvm
 kvm_touch_rc=0 (0 = runner user can open the device)
 
 ########## .pv-evidence-final/00c-disk-audit.txt ##########
@@ -52,41 +52,41 @@ removed_paths: /usr/share/dotnet /opt/hostedtoolcache/Python /opt/hostedtoolcach
 -- free space AFTER cleanup --
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/root       145G   46G   99G  32% /
-PV_FREE_KB_AFTER_AUDIT=103783008
+PV_FREE_KB_AFTER_AUDIT=103782872
 
 ########## .pv-evidence-final/00d-disk-c1.txt ##########
-disk guard (attempt C part 1 start): free_kb=96855244 floor_kb=2097152
-/dev/root       145G   52G   93G  37% /
+disk guard (attempt C part 1 start): free_kb=96867080 floor_kb=2097152
+/dev/root       145G   52G   93G  36% /
 DISK_GUARD=OK (attempt C part 1 start)
 
 ########## .pv-evidence-final/00e-disk-c2.txt ##########
-disk guard (attempt C part 2 start): free_kb=96855084 floor_kb=2097152
-/dev/root       145G   52G   93G  37% /
+disk guard (attempt C part 2 start): free_kb=96866924 floor_kb=2097152
+/dev/root       145G   52G   93G  36% /
 DISK_GUARD=OK (attempt C part 2 start)
 
 ########## .pv-evidence-final/00f-disk-s1.txt ##########
-disk guard (attempt S part 1 start): free_kb=96854924 floor_kb=2097152
-/dev/root       145G   52G   93G  37% /
+disk guard (attempt S part 1 start): free_kb=96866760 floor_kb=2097152
+/dev/root       145G   52G   93G  36% /
 DISK_GUARD=OK (attempt S part 1 start)
 
 ########## .pv-evidence-final/00g-disk-s2.txt ##########
-disk guard (attempt S part 2 start): free_kb=96854792 floor_kb=2097152
-/dev/root       145G   52G   93G  37% /
+disk guard (attempt S part 2 start): free_kb=96866628 floor_kb=2097152
+/dev/root       145G   52G   93G  36% /
 DISK_GUARD=OK (attempt S part 2 start)
 
 ########## .pv-evidence-final/00h-disk-birth.txt ##########
-disk guard (production birth start): free_kb=96854616 floor_kb=2097152
-/dev/root       145G   52G   93G  37% /
+disk guard (production birth start): free_kb=96866456 floor_kb=2097152
+/dev/root       145G   52G   93G  36% /
 DISK_GUARD=OK (production birth start)
 
 ########## .pv-evidence-final/00i-disk-wake.txt ##########
-disk guard (production wake part 1 start): free_kb=96854444 floor_kb=2097152
-/dev/root       145G   52G   93G  37% /
+disk guard (production wake part 1 start): free_kb=96866308 floor_kb=2097152
+/dev/root       145G   52G   93G  36% /
 DISK_GUARD=OK (production wake part 1 start)
 
 ########## .pv-evidence-final/00j-disk-wake2.txt ##########
-disk guard (production wake part 2 start): free_kb=96853844 floor_kb=2097152
-/dev/root       145G   52G   93G  37% /
+disk guard (production wake part 2 start): free_kb=96865712 floor_kb=2097152
+/dev/root       145G   52G   93G  36% /
 DISK_GUARD=OK (production wake part 2 start)
 
 ########## .pv-evidence-final/01-install.txt ##########
@@ -134,21 +134,21 @@ id: 39 or "pixel_6a"
 pixel_6_listed=1
 -- installed system-image dir --
 total 4364352
-drwxr-xr-x 3 runner runner       4096 Nov 20 18:21 .
-drwxr-xr-x 3 runner runner       4096 Nov 20 18:21 ..
--rw-r--r-- 1 runner runner   19603789 Nov 20 18:21 NOTICE.txt
--rw-r--r-- 1 runner runner        356 Nov 20 18:21 VerifiedBootParams.textproto
--rw-r--r-- 1 runner runner        689 Nov 20 18:21 advancedFeatures.ini
--rw-r--r-- 1 runner runner       5008 Nov 20 18:21 build.prop
-drwxr-xr-x 3 runner runner       4096 Nov 20 18:21 data
--rw-r--r-- 1 runner runner   18874368 Nov 20 18:21 encryptionkey.img
--rw-r--r-- 1 runner runner   17374688 Nov 20 18:21 kernel-ranchu
--rw-r--r-- 1 runner runner      19303 Nov 20 18:21 package.xml
--rw-r--r-- 1 runner runner    1820484 Nov 20 18:21 ramdisk.img
--rw-r--r-- 1 runner runner        357 Nov 20 18:21 source.properties
--rw-r--r-- 1 runner runner 4306501632 Nov 20 18:21 system.img
--rw-r--r-- 1 runner runner    1048576 Nov 20 18:21 userdata.img
--rw-r--r-- 1 runner runner  103809024 Nov 20 18:21 vendor.img
+drwxr-xr-x 3 runner runner       4096 Nov 20 18:40 .
+drwxr-xr-x 3 runner runner       4096 Nov 20 18:40 ..
+-rw-r--r-- 1 runner runner   19603789 Nov 20 18:40 NOTICE.txt
+-rw-r--r-- 1 runner runner        356 Nov 20 18:40 VerifiedBootParams.textproto
+-rw-r--r-- 1 runner runner        689 Nov 20 18:40 advancedFeatures.ini
+-rw-r--r-- 1 runner runner       5008 Nov 20 18:40 build.prop
+drwxr-xr-x 3 runner runner       4096 Nov 20 18:40 data
+-rw-r--r-- 1 runner runner   18874368 Nov 20 18:40 encryptionkey.img
+-rw-r--r-- 1 runner runner   17374688 Nov 20 18:40 kernel-ranchu
+-rw-r--r-- 1 runner runner      19303 Nov 20 18:40 package.xml
+-rw-r--r-- 1 runner runner    1820484 Nov 20 18:40 ramdisk.img
+-rw-r--r-- 1 runner runner        357 Nov 20 18:40 source.properties
+-rw-r--r-- 1 runner runner 4306501632 Nov 20 18:40 system.img
+-rw-r--r-- 1 runner runner    1048576 Nov 20 18:40 userdata.img
+-rw-r--r-- 1 runner runner  103809024 Nov 20 18:40 vendor.img
 -- sdkmanager --list_installed, system-images lines --
   system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
 ----- 2b create attempts (FULL avdmanager output in section 02b) -----
@@ -179,7 +179,7 @@ mode=fresh - no artifact restore in this step (fresh boots a new phone; roundtri
 ########## .pv-evidence-final/03-boot.txt ##########
 ===== 3 boot emulator headless (bounded wait 12 min) =====
 mode=fresh wipe_flag='-wipe-data'
-emulator_pid=43521
+emulator_pid=43808
 * daemon not running; starting now at tcp:5037
 * daemon started successfully
 wait_for_device_rc=0 (124 = timed out after 90s; the bounded poll below still runs)
@@ -194,17 +194,17 @@ boot_wait_result: sys.boot_completed=1 reached
 
 ########## .pv-evidence-final/04-capture.txt ##########
 ===== 4 capture identity + marker (only if booted) =====
-android_id: 93565a84d1c56f6c
+android_id: 3132878d652cb30b
 model: sdk_gphone64_x86_64
 device: emu64xa
 android_release: 14
 android_sdk: 34
-phonevault-marker-local.txt: 1 file pushed, 0 skipped. 0.2 MB/s (28 bytes in 0.000s)
+phonevault-marker-local.txt: 1 file pushed, 0 skipped. 0.3 MB/s (28 bytes in 0.000s)
 marker_push_rc=0
-marker_token: pv1-20261120182357-a92873e0
-marker_readback: pv1-20261120182357-a92873e0
+marker_token: pv1-20261120184223-773c5211
+marker_readback: pv1-20261120184223-773c5211
 MARKER_OK=1 - marker pushed via adb push and verified by readback
--rw-r--r-- 1 runner runner 1370221 Nov 20 18:24 phone-boot.png
+-rw-r--r-- 1 runner runner 1366438 Nov 20 18:42 phone-boot.png
 CAPTURE_OK=1
 
 ########## .pv-evidence-final/05-shutdown.txt ##########
@@ -212,56 +212,56 @@ CAPTURE_OK=1
 OK: killing emulator, bye bye
 OK
 emu_kill_rc=0
-shutdown poll 1: still alive: launcher_pid=43521 qemu-system_pids=43521 43867 
+shutdown poll 1: still alive: launcher_pid=43808 qemu-system_pids=43808 
 graceful stop confirmed: launcher + qemu-system all gone at poll 2 (~5s after emu kill)
 GRACEFUL_STOP=1
 host sync done (host page cache flushed before tar)
 /dev/root       145G   52G   94G  36% /
-810M	/home/runner/.android/avd/factoryphone.avd
-total 810M
--rw------- 1 runner runner    0 Nov 20 18:23 bootcompleted.ini
--rw-r--r-- 1 runner runner  66M Nov 20 18:23 cache.img
--rw-r--r-- 1 runner runner 193K Nov 20 18:23 cache.img.qcow2
--rw-r--r-- 1 runner runner 3.8K Nov 20 18:23 config.ini
--rw-r--r-- 1 runner runner  293 Nov 20 18:23 emu-launch-params.txt
--rw-r--r-- 1 runner runner  113 Nov 20 18:24 emulator-user.ini
--rw------- 1 runner runner  18M Nov 20 18:23 encryptionkey.img
--rw-r--r-- 1 runner runner 1.7M Nov 20 18:24 encryptionkey.img.qcow2
--rw-r--r-- 1 runner runner 4.3K Nov 20 18:23 hardware-qemu.ini
--rw-r--r-- 1 runner runner 1.8M Nov 20 18:23 initrd
-drwxr-xr-x 3 runner runner 4.0K Nov 20 18:23 modem_simulator
--rw-r--r-- 1 runner runner    0 Nov 20 18:23 multiinstance.lock
--rw-r--r-- 1 runner runner   38 Nov 20 18:23 netsim.ini
--rw-r--r-- 1 runner runner    1 Nov 20 18:23 qemu-version.txt
--rw-r--r-- 1 runner runner    0 Nov 20 18:23 read-snapshot.txt
-drwxr-xr-x 2 runner runner 4.0K Nov 20 18:23 tmpAdbCmds
--rw------- 1 runner runner 6.2M Nov 20 18:23 userdata-qemu.img
--rw-r--r-- 1 runner runner 777M Nov 20 18:24 userdata-qemu.img.qcow2
--rw-r--r-- 1 runner runner    9 Nov 20 18:23 version_num.cache
+804M	/home/runner/.android/avd/factoryphone.avd
+total 804M
+-rw------- 1 runner runner    0 Nov 20 18:42 bootcompleted.ini
+-rw-r--r-- 1 runner runner  66M Nov 20 18:41 cache.img
+-rw-r--r-- 1 runner runner 193K Nov 20 18:41 cache.img.qcow2
+-rw-r--r-- 1 runner runner 3.8K Nov 20 18:41 config.ini
+-rw-r--r-- 1 runner runner  293 Nov 20 18:41 emu-launch-params.txt
+-rw-r--r-- 1 runner runner  113 Nov 20 18:42 emulator-user.ini
+-rw------- 1 runner runner  18M Nov 20 18:41 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.7M Nov 20 18:42 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.3K Nov 20 18:41 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.8M Nov 20 18:41 initrd
+drwxr-xr-x 3 runner runner 4.0K Nov 20 18:42 modem_simulator
+-rw-r--r-- 1 runner runner    0 Nov 20 18:41 multiinstance.lock
+-rw-r--r-- 1 runner runner   38 Nov 20 18:41 netsim.ini
+-rw-r--r-- 1 runner runner    1 Nov 20 18:41 qemu-version.txt
+-rw-r--r-- 1 runner runner    0 Nov 20 18:41 read-snapshot.txt
+drwxr-xr-x 2 runner runner 4.0K Nov 20 18:42 tmpAdbCmds
+-rw------- 1 runner runner 6.2M Nov 20 18:41 userdata-qemu.img
+-rw-r--r-- 1 runner runner 771M Nov 20 18:42 userdata-qemu.img.qcow2
+-rw-r--r-- 1 runner runner    9 Nov 20 18:41 version_num.cache
 
 ########## .pv-evidence-final/06-pack.txt ##########
 ===== 6 pack AVD state (artifact transport - NOT the vault) =====
 -- AVD folder listing BEFORE pack (discovery evidence; no state filename is assumed) --
-total 810M
--rw------- 1 runner runner    0 Nov 20 18:23 bootcompleted.ini
--rw-r--r-- 1 runner runner  66M Nov 20 18:23 cache.img
--rw-r--r-- 1 runner runner 193K Nov 20 18:23 cache.img.qcow2
--rw-r--r-- 1 runner runner 3.8K Nov 20 18:23 config.ini
--rw-r--r-- 1 runner runner  293 Nov 20 18:23 emu-launch-params.txt
--rw-r--r-- 1 runner runner  113 Nov 20 18:24 emulator-user.ini
--rw------- 1 runner runner  18M Nov 20 18:23 encryptionkey.img
--rw-r--r-- 1 runner runner 1.7M Nov 20 18:24 encryptionkey.img.qcow2
--rw-r--r-- 1 runner runner 4.3K Nov 20 18:23 hardware-qemu.ini
--rw-r--r-- 1 runner runner 1.8M Nov 20 18:23 initrd
-drwxr-xr-x 3 runner runner 4.0K Nov 20 18:23 modem_simulator
--rw-r--r-- 1 runner runner    0 Nov 20 18:23 multiinstance.lock
--rw-r--r-- 1 runner runner   38 Nov 20 18:23 netsim.ini
--rw-r--r-- 1 runner runner    1 Nov 20 18:23 qemu-version.txt
--rw-r--r-- 1 runner runner    0 Nov 20 18:23 read-snapshot.txt
-drwxr-xr-x 2 runner runner 4.0K Nov 20 18:23 tmpAdbCmds
--rw------- 1 runner runner 6.2M Nov 20 18:23 userdata-qemu.img
--rw-r--r-- 1 runner runner 777M Nov 20 18:24 userdata-qemu.img.qcow2
--rw-r--r-- 1 runner runner    9 Nov 20 18:23 version_num.cache
+total 804M
+-rw------- 1 runner runner    0 Nov 20 18:42 bootcompleted.ini
+-rw-r--r-- 1 runner runner  66M Nov 20 18:41 cache.img
+-rw-r--r-- 1 runner runner 193K Nov 20 18:41 cache.img.qcow2
+-rw-r--r-- 1 runner runner 3.8K Nov 20 18:41 config.ini
+-rw-r--r-- 1 runner runner  293 Nov 20 18:41 emu-launch-params.txt
+-rw-r--r-- 1 runner runner  113 Nov 20 18:42 emulator-user.ini
+-rw------- 1 runner runner  18M Nov 20 18:41 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.7M Nov 20 18:42 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.3K Nov 20 18:41 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.8M Nov 20 18:41 initrd
+drwxr-xr-x 3 runner runner 4.0K Nov 20 18:42 modem_simulator
+-rw-r--r-- 1 runner runner    0 Nov 20 18:41 multiinstance.lock
+-rw-r--r-- 1 runner runner   38 Nov 20 18:41 netsim.ini
+-rw-r--r-- 1 runner runner    1 Nov 20 18:41 qemu-version.txt
+-rw-r--r-- 1 runner runner    0 Nov 20 18:41 read-snapshot.txt
+drwxr-xr-x 2 runner runner 4.0K Nov 20 18:42 tmpAdbCmds
+-rw------- 1 runner runner 6.2M Nov 20 18:41 userdata-qemu.img
+-rw-r--r-- 1 runner runner 771M Nov 20 18:42 userdata-qemu.img.qcow2
+-rw-r--r-- 1 runner runner    9 Nov 20 18:41 version_num.cache
 pack discover: userdata candidate absent: userdata.img
 userdata candidates present: userdata-qemu.img.qcow2 userdata-qemu.img
 pack: absent, skipped: sdcard.img
@@ -272,14 +272,14 @@ emulator_version=/usr/local/lib/android/sdk/emulator/qemu/linux-x86_64/qemu-syst
 emulator_pkg_revision=37.3.10
 system_image_revision=14
 session=1
-packed_utc=2026-11-20T18:24:09Z
-android_id=93565a84d1c56f6c
-marker_token=pv1-20261120182357-a92873e0
+packed_utc=2026-11-20T18:42:32Z
+android_id=3132878d652cb30b
+marker_token=pv1-20261120184223-773c5211
 marker_ok=1
 largest_userdata_file=userdata-qemu.img.qcow2
-largest_userdata_size_bytes=814022656
-largest_userdata_sha256=4be3d76d1f63feba8207da29a2eaebab5d153d870b42c05f563abfcfc58df260
-packed_file: userdata-qemu.img.qcow2 814022656 bytes
+largest_userdata_size_bytes=807927808
+largest_userdata_sha256=9a64ea7529f8f095ed267071ea045da03c302001b42da1b218285b67277051a6
+packed_file: userdata-qemu.img.qcow2 807927808 bytes
 packed_file: userdata-qemu.img 6488064 bytes
 packed_file: encryptionkey.img.qcow2 1703936 bytes
 packed_file: encryptionkey.img 18874368 bytes
@@ -290,7 +290,7 @@ packed_file: phonevault-version.txt (this file)
 pack set: userdata-qemu.img.qcow2 userdata-qemu.img encryptionkey.img.qcow2 encryptionkey.img config.ini emulator-user.ini hardware-qemu.ini phonevault-version.txt
 excluded by construction (never in the candidate list): cache.img, cache.img.qcow2, snapshots/, *.lock
 tar_rc=0
--rw-r--r-- 1 runner runner 803M Nov 20 18:24 phonevault-state.tar
+-rw-r--r-- 1 runner runner 797M Nov 20 18:42 phonevault-state.tar
 -- tar contents --
 userdata-qemu.img.qcow2
 userdata-qemu.img
