@@ -4463,7 +4463,7 @@ jobs:
                     if [ "$MISS_EMU" -ge 3 ]; then DIED="emulator"; break; fi
                     if curl -s -o "$LV/pub.html" --max-time 10 "$TUN/$TOKEN/fallback/" 2>/dev/null && grep -q 'PhoneVault live view' "$LV/pub.html" 2>/dev/null; then MISS_URL=0; else MISS_URL=$((MISS_URL+1)); fi
                     if [ "$MISS_URL" -ge 4 ]; then echo "LIVE: url dead 4x - restart tunnel"; kill "$(cat "$LV/cf.pid" 2>/dev/null)" 2>/dev/null; MISS_URL=0; fi
-# tunnel watchdog
+                    # tunnel watchdog
                     if ! kill -0 "$(cat "$LV/cf.pid" 2>/dev/null)" 2>/dev/null; then
                       if [ "$CF_RESTARTS" -ge 20 ]; then DIED="tunnel"; break; fi
                       CF_RESTARTS=$((CF_RESTARTS+1))
