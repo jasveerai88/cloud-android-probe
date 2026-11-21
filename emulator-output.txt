@@ -1,4 +1,9 @@
-EMULATOR BOOT: NO BOOT - sys.boot_completed never reached 1 within the 12-minute bounded wait (see sections 3-4 + emulator console log tail)
+DATA_PERSIST: YES (sentinel for session 4 found at /data/local/tmp/pv-datapersist-sentinel.txt - guest /data content survived the pack/restore cycle; raw: pv-datapersist session=4 planted_utc=2026-11-21T04:42:01Z run_id=44861961923)
+WAKE: SAME PHONE - applied android_id survived the extra reboot; session advanced to 5
+APP: PREEXISTING org.fdroid.fdroid - present BEFORE this wake's install phase (cross-run persistence evidence; the install is still re-applied)
+APP: INSTALLED org.fdroid.fdroid (F-Droid.apk sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52)
+APP: SURVIVED reboot 2 - org.fdroid.fdroid still installed after the survival reboot
+EMULATOR BOOT: BOOTED - wake job (v4.0 production: pinned + certificate-verified pack restored into a clean hand-made folder, boot WITHOUT -wipe-data, capsule re-applied by root BEFORE the verdict identity read, identity re-judged after a second plain reboot, state re-packed with session+1 and stored to the HF vault dataset (v5.4); sections 07b/07c + 07d); PACKED=1 (production pack stored to the phone HF vault dataset, v5.4 direct-to-vault; sections 07a/07b/07c + 07d); marker: see identity verdict above
 
 ########## .pv-evidence-final/00-baseline.txt ##########
 PHONEVAULT EMULATOR BOOT TEST v4.0
@@ -8,9 +13,9 @@ v3.7 changes over v3.6, from the roundtrip2 run No.13 verdict (raw output person
 v3.8 changes over v3.7, from the roundtrip3 run No.15 findings (raw output personally verified by Atlas): attempt S2 RAN but its verdict was polluted by workflow bugs (the /sdcard marker push failed at birth - Operation not permitted - so marker_ok was 0 from the start; the pack tar then TRUNCATED with tar_rc=2 on a full disk while PACK_OK=1 still printed, so snapshots/pv1 vanished on extraction and the boot-2 verdict read an EMPTY certificate); attempt C never ran (birth boot flake). v3.8 fixes, in order: MARKER - written by adb root to /data/local/tmp/phonevault-marker.txt (no FUSE layer), /sdcard demoted to a bounded-retry fallback, and a birth without a verified marker is NOT EVALUATED and never packed. PACK HYGIENE - PACK_OK requires tar_rc=0 and the AVD is never wiped under an untrusted pack; snapshots/default_boot (the emulator own 2.3 GB quick-boot cache, mutating at exit) is EXCLUDED; the integrity hash is computed after the tar exists, FROM the tar over its largest file, sealed into the attempt state handoff, and restore re-hashes the extracted file against it (match by construction). CERTIFICATE GATE - restore reads phonevault-version.txt FROM THE EXTRACTED FOLDER and asserts android_id non-empty + marker_ok=1 BEFORE booting; a failed gate is NOT EVALUATED, never IDENTITY LOST; the S restore additionally gates on snapshots/pv1/ram.bin existing non-empty, and if the restore boot log cannot show pv1 loading, even a matching identity is SNAPSHOT LOAD UNPROVEN, not SAME PHONE. BOOT ROBUSTNESS - waits raised to ~15 min with ONE in-attempt retry. Re-sequenced: attempt C (identity-as-code) FIRST, attempt S SECOND; each attempt is split into capture+pack and gated-restore+verdict steps because the fixed single steps exceed the per-step size gate. Everything else - graceful pack, runtime-read expected values, no hash or ID written into this workflow - is v3.7 unchanged.
 v3.9 changes over v3.8, from the roundtrip4 run No.17 failure (job FAILED in 7m 26s; the checker verified the output commit never landed: disk-full reported at job step 11 of 17, which is PhoneVault step 10 of 12 - roundtrip4 attempt C part 2 - and the final output step then had no room either; the run produced NO verdicts at all): the GitHub runner gives this job only ~14 GB of usable disk, and the SDK + system image + the AVD + multi-GB per-attempt state tars and snapshot payloads across two attempts eat it. v3.9 adds mode roundtrip5 = the roundtrip4 pair (attempt C FIRST, attempt S SECOND, every v3.8 gate unchanged) plus a DISK DISCIPLINE layer: (1) START-OF-JOB AUDIT in this step (section 0c): df -h before/after a CONSERVATIVE cleanup of standard runner junk this job never uses (the .NET SDK, the Haskell toolchain, Boost headers, hosted-toolcache Python/PyPy, pre-pulled docker images, and SDK system images OTHER than android-34 - cmdline-tools/emulator/platform-tools and the android-34 image are never touched); every removal is listed with its measured size. (2) PER-ATTEMPT CLEANUP: the moment an attempt verdict is sealed and its evidence copied out, that attempt local state tar (and, after attempt C, the restored AVD state files, under the same keep-list attempt S applies at its own start) is DELETED before the next attempt begins; df -h is printed at every attempt boundary. (3) MID-JOB DISK GUARD: a guard helper runs at the start of each roundtrip5 attempt step; free space under 2 GB seals that attempt as NOT EVALUATED (disk) and skips its body - a harness verdict, never a corrupted run and never evidence. (4) OUTPUT SURVIVAL: each attempt verdict is already copied into .pv-evidence-final the moment it is sealed; v3.9 additionally uploads that folder (text only, KBs) as its own artifact (phonevault-evidence) and writes both verdict lines to the GitHub step summary in the final step, BEFORE the output commit is attempted - a late disk-full can no longer swallow the verdicts. Everything else - graceful pack, certificate + snapshot gates, root marker path, boot retry, runtime-read expected values, no hash or ID written into this workflow - is v3.8 unchanged.
 v4.0 changes over v3.9, from the roundtrip5 run No.19 verdict (STATE.md has the sealed record): ROUNDTRIP5-C: IDENTITY RESTORED (code-applied) - identity-as-code is PROVEN (birth ID re-applied by root after a disk restore that woke with a different, re-initialised ID; survived the extra reboot); ROUNDTRIP5-S: IDENTITY LOST (clean) - snapshot route CLOSED on android-34 google_apis, as are disk-native transport (encryption wall) and no-lock birth. v4.0 adds NO experiment: it promotes attempt-C into production: two dispatch-only modes. BIRTH (07a) runs ONCE: fresh -wipe-data boot, root marker under the validity gate, capsule captured exactly as attempt C did, graceful stop, production pack (v3.9 hygiene: tar_rc=0, snapshots/ excluded, largest-file hash sealed + re-verified FROM the tar) with the capsule INSIDE the pack (pv-capsule.tar + capsule-manifest.txt members - a wake runs in a later run), certificate production=1 session=1 capsule_sha256 android_id marker_ok=1 born_utc, pack UPLOADED as phonevault-avd-state, sha256 printed. WAKE (07b/07c) is every later power-on: pin_run_id REQUIRED (birth or newest GOOD wake run, never newest-blind); certificate verified BEFORE extraction (android_id + marker_ok=1 + capsule re-hash + largest-file re-hash; failure = WAKE: NOT EVALUATED, certificate printed); clean hand-made folder, boot WITHOUT -wipe-data, control readings printed, capsule re-applied by root BEFORE any verdict read (tar at /, settings put LAST); WAKE: SAME PHONE only if ID + marker match after apply AND after a second reboot; then RE-PACKED with the same capsule, session+1, uploaded - state advances every wake. Full contract: phonevault/V40-NOTES.md. All earlier modes unchanged.
-run_started_utc: 2026-11-21T04:42:43Z
-workflow_run_number: 125
-workflow_run_id: 44865955605
+run_started_utc: 2026-11-21T05:07:15Z
+workflow_run_number: 126
+workflow_run_id: 44869303405
 workflow_run_attempt: 1
 mode: wake (push-triggered runs are always fresh; restore and all roundtrip modes are dispatch-only; birth and wake (v4.0 production) are dispatch-only)
 note: artifact transport is NOT the vault - DESIGN.md section 5 chunk_vault/HF wiring replaces it for real sessions (build step 3)
@@ -19,14 +24,14 @@ RUNNER_OS=Linux RUNNER_ARCH=X64 ImageOS=ubuntu26 ImageVersion=20261116.202.1
 Linux runnervm0hi8g 7.0.0-1020-azure #21-Ubuntu SMP PREEMPT Tue Oct 27 22:34:38 UTC 2026 x86_64 GNU/Linux
 4
                total        used        free      shared  buff/cache   available
-Mem:            15Gi       916Mi        14Gi        43Mi       918Mi        14Gi
+Mem:            15Gi       938Mi        14Gi        44Mi       918Mi        14Gi
 Swap:          3.0Gi          0B       3.0Gi
 /dev/root       145G   58G   88G  40% /
-crw-rw---- 1 root kvm 10, 232 Nov 21 04:39 /dev/kvm
+crw-rw---- 1 root kvm 10, 232 Nov 21 05:01 /dev/kvm
 KVM_GATE: PRESENT
 ===== 0b kvm permissions (standard GitHub emulator step) =====
 KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
-crw-rw-rw- 1 root kvm 10, 232 Nov 21 04:42 /dev/kvm
+crw-rw-rw- 1 root kvm 10, 232 Nov 21 05:07 /dev/kvm
 kvm_touch_rc=0 (0 = runner user can open the device)
 
 ########## .pv-evidence-final/00c-disk-audit.txt ##########
@@ -44,7 +49,7 @@ cleanup: /opt/hostedtoolcache/PyPy = 527M
 removed: /opt/hostedtoolcache/PyPy
 no preinstalled SDK system-images dir at /usr/local/lib/android/sdk/system-images
 -- docker image prune (this job never uses docker) --
-deleted: sha256:9b4e83aab6880497fe4cbec987d544eed371ba01a1eb9eff5ba9cbf6acb9c2fa
+deleted: sha256:cf0542829b63dbea549be72f16da1a40b8f07fa11eacdfe24be20f6560c03982
 
 Total reclaimed space: 958.4MB
 docker_prune_done
@@ -52,37 +57,42 @@ removed_paths: /usr/share/dotnet /opt/hostedtoolcache/Python /opt/hostedtoolcach
 -- free space AFTER cleanup --
 Filesystem      Size  Used Avail Use% Mounted on
 /dev/root       145G   46G   99G  32% /
-PV_FREE_KB_AFTER_AUDIT=103782976
+PV_FREE_KB_AFTER_AUDIT=103782748
 
 ########## .pv-evidence-final/00d-disk-c1.txt ##########
-disk guard (attempt C part 1 start): free_kb=98538488 floor_kb=2097152
+disk guard (attempt C part 1 start): free_kb=98538440 floor_kb=2097152
 /dev/root       145G   51G   94G  35% /
 DISK_GUARD=OK (attempt C part 1 start)
 
 ########## .pv-evidence-final/00e-disk-c2.txt ##########
-disk guard (attempt C part 2 start): free_kb=98538332 floor_kb=2097152
+disk guard (attempt C part 2 start): free_kb=98538280 floor_kb=2097152
 /dev/root       145G   51G   94G  35% /
 DISK_GUARD=OK (attempt C part 2 start)
 
 ########## .pv-evidence-final/00f-disk-s1.txt ##########
-disk guard (attempt S part 1 start): free_kb=98538168 floor_kb=2097152
+disk guard (attempt S part 1 start): free_kb=98538408 floor_kb=2097152
 /dev/root       145G   51G   94G  35% /
 DISK_GUARD=OK (attempt S part 1 start)
 
 ########## .pv-evidence-final/00g-disk-s2.txt ##########
-disk guard (attempt S part 2 start): free_kb=98538040 floor_kb=2097152
+disk guard (attempt S part 2 start): free_kb=98538280 floor_kb=2097152
 /dev/root       145G   51G   94G  35% /
 DISK_GUARD=OK (attempt S part 2 start)
 
 ########## .pv-evidence-final/00h-disk-birth.txt ##########
-disk guard (production birth start): free_kb=98537808 floor_kb=2097152
+disk guard (production birth start): free_kb=98538048 floor_kb=2097152
 /dev/root       145G   51G   94G  35% /
 DISK_GUARD=OK (production birth start)
 
 ########## .pv-evidence-final/00i-disk-wake.txt ##########
-disk guard (production wake part 1 start): free_kb=98537612 floor_kb=2097152
+disk guard (production wake part 1 start): free_kb=98537852 floor_kb=2097152
 /dev/root       145G   51G   94G  35% /
 DISK_GUARD=OK (production wake part 1 start)
+
+########## .pv-evidence-final/00j-disk-wake2.txt ##########
+disk guard (production wake part 2 start): free_kb=90085904 floor_kb=2097152
+/dev/root       145G   59G   86G  41% /
+DISK_GUARD=OK (production wake part 2 start)
 
 ########## .pv-evidence-final/01-install.txt ##########
 ===== 1 sdkmanager installs (emulator + platform-tools + system image) =====
@@ -128,22 +138,22 @@ id: 39 or "pixel_6a"
     OEM : Google
 pixel_6_listed=1
 -- installed system-image dir --
-total 4364352
-drwxr-xr-x 3 runner runner       4096 Nov 21 04:44 .
-drwxr-xr-x 3 runner runner       4096 Nov 21 04:44 ..
--rw-r--r-- 1 runner runner   19603789 Nov 21 04:43 NOTICE.txt
--rw-r--r-- 1 runner runner        356 Nov 21 04:43 VerifiedBootParams.textproto
--rw-r--r-- 1 runner runner        689 Nov 21 04:43 advancedFeatures.ini
--rw-r--r-- 1 runner runner       5008 Nov 21 04:43 build.prop
-drwxr-xr-x 3 runner runner       4096 Nov 21 04:44 data
--rw-r--r-- 1 runner runner   18874368 Nov 21 04:43 encryptionkey.img
--rw-r--r-- 1 runner runner   17374688 Nov 21 04:43 kernel-ranchu
--rw-r--r-- 1 runner runner      19303 Nov 21 04:44 package.xml
--rw-r--r-- 1 runner runner    1820484 Nov 21 04:43 ramdisk.img
--rw-r--r-- 1 runner runner        357 Nov 21 04:43 source.properties
--rw-r--r-- 1 runner runner 4306501632 Nov 21 04:44 system.img
--rw-r--r-- 1 runner runner    1048576 Nov 21 04:44 userdata.img
--rw-r--r-- 1 runner runner  103809024 Nov 21 04:44 vendor.img
+total 4364356
+drwxr-xr-x 3 runner runner       4096 Nov 21 05:08 .
+drwxr-xr-x 3 runner runner       4096 Nov 21 05:08 ..
+-rw-r--r-- 1 runner runner   19603789 Nov 21 05:07 NOTICE.txt
+-rw-r--r-- 1 runner runner        356 Nov 21 05:07 VerifiedBootParams.textproto
+-rw-r--r-- 1 runner runner        689 Nov 21 05:07 advancedFeatures.ini
+-rw-r--r-- 1 runner runner       5008 Nov 21 05:07 build.prop
+drwxr-xr-x 3 runner runner       4096 Nov 21 05:08 data
+-rw-r--r-- 1 runner runner   18874368 Nov 21 05:07 encryptionkey.img
+-rw-r--r-- 1 runner runner   17374688 Nov 21 05:07 kernel-ranchu
+-rw-r--r-- 1 runner runner      19303 Nov 21 05:08 package.xml
+-rw-r--r-- 1 runner runner    1820484 Nov 21 05:07 ramdisk.img
+-rw-r--r-- 1 runner runner        357 Nov 21 05:07 source.properties
+-rw-r--r-- 1 runner runner 4306501632 Nov 21 05:08 system.img
+-rw-r--r-- 1 runner runner    1048576 Nov 21 05:08 userdata.img
+-rw-r--r-- 1 runner runner  103809024 Nov 21 05:08 vendor.img
 -- sdkmanager --list_installed, system-images lines --
   system-images;android-34;google_apis;x86_64 | 14            | Google APIs Intel x86_64 Atom System Image | system-images/android-34/google_apis/x86_64
 ----- 2b create attempts (FULL avdmanager output in section 02b) -----
@@ -190,8 +200,8 @@ host sync done (host page cache flushed before tar)
 /dev/root       145G   51G   94G  35% /
 1.1M	/home/runner/.android/avd/factoryphone.avd
 total 1.1M
--rw-r--r-- 1 runner runner 3.6K Nov 21 04:44 config.ini
--rw-r--r-- 1 runner runner 1.0M Nov 21 04:44 userdata.img
+-rw-r--r-- 1 runner runner 3.6K Nov 21 05:08 config.ini
+-rw-r--r-- 1 runner runner 1.0M Nov 21 05:08 userdata.img
 
 ########## .pv-evidence-final/06-pack.txt ##########
 ===== 6 pack AVD state (artifact transport - NOT the vault) =====
@@ -207,12 +217,12 @@ mode=wake - production birth not applicable (birth mode only)
 
 ########## .pv-evidence-final/07b-wake.txt ##########
 ===== 7b production WAKE part 1 (v4.0): pinned + gated restore, capsule re-apply (wake mode only) =====
-pin_run_id_input=44839038461
+pin_run_id_input=44861961923
 wake rule (poisoned-shelf lesson, run No.9): NEVER newest-blind - pin_run_id names the birth run or the newest GOOD wake run; the pack is accepted only when its OWN certificate passes the gates below BEFORE extraction or boot.
 VAULT FETCH OK prefix=pkg-8ce23b80
 vault_fetch_ok=1 (1 = from vault jasveerai92/phonevault-one; 0 = artifact route below)
 -- v5.4: pack fetched from the HF vault - artifact download skipped --
--rw-r--r-- 1 runner runner 2.4G Nov 21 04:44 pv-wake-dl/phonevault-state.tar
+-rw-r--r-- 1 runner runner 2.4G Nov 21 05:08 pv-wake-dl/phonevault-state.tar
 -- CERTIFICATE GATE (BEFORE extraction or boot): the pack's own phonevault-version.txt must prove android_id present + marker_ok=1, capsule integrity (pv-capsule.tar re-hashed vs capsule_sha256) and disk integrity (largest userdata file re-hashed vs largest_userdata_sha256). Gate failure = WAKE: NOT EVALUATED, certificate printed --
 -- pinned pack's phonevault-version.txt (the certificate the verdict uses) --
 avd_name=factoryphone
@@ -333,7 +343,7 @@ total 2.4G
 -rw-r--r-- 1 runner runner 2.4G Nov 21 04:42 userdata-qemu.img.qcow2
 -- wake boot (standard flags, -no-snapshot, NEVER -wipe-data) --
 -- boot attempt 1 (extra flags: -no-snapshot) --
-emulator_pid=43986
+emulator_pid=44047
 * daemon not running; starting now at tcp:5037
 * daemon started successfully
 wait_for_device_rc=0
@@ -347,14 +357,14 @@ adb_root_rc=0
 root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
 rooted=1
 -- apply the capsule as root (BEFORE identity is read for the verdict): push the capsule tar FROM THE PACK, extract at /, then settings put LAST so the settings provider's own write is the final word --
-/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 58.8 MB/s (14336 bytes in 0.000s)
+/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 123.6 MB/s (14336 bytes in 0.000s)
 capsule_push_rc=0
 capsule_extract_rc=0
 apply hygiene: the placed capsule carries no account state (identity-only capsule) - no account files were placed and no guest file is touched; v5.9 behaviour
 settings_put_rc=0
 android_id_AFTER_apply=1c2255179b74f810
 marker_AFTER_apply (/data/local/tmp/phonevault-marker.txt)=pv1-20261120215905-f54057a4 (expected: pv1-20261120215905-f54057a4)
--rw-r--r-- 1 runner runner 1366879 Nov 21 04:46 .pv-screencap.png
+-rw-r--r-- 1 runner runner 15580 Nov 21 05:10 .pv-screencap.png
 wake part 1 complete - the guest stays BOOTED; part 2 reboots it and judges survival; handoff in .pv-evidence/pv40-wake-state.txt
 WAKE_STATE=PENDING
 CID=1c2255179b74f810
@@ -375,12 +385,441 @@ POST_MARKER=pv1-20261120215905-f54057a4
 ===== 07b1 seat app side-load (v6.4): ONE extra app installed BEFORE the live window opens, so the seating target can be fetched inside the window =====
 -- seat app: Aurora Store 4.8.4 (versionCode 76), F-Droid repo build - the sha256 pin is the hash in F-Droid's signed repo index (index-v2) for this exact file, desk-verified 2026-11-14 (job #13); the download is verified BEFORE install and a mismatch is skipped, never installed (the step-15 manifest discipline, one app, before the window); the outcome never touches the identity verdict --
                                  Dload  Upload  Total   Spent   Left   Speed
-  0      0   0      0   0      0      0      0                              0  1  8.92M   1  97951   0      0  92716      0   01:40   00:01   01:39  92756 78  8.92M  78  6.96M   0      0  3.33M      0   00:02   00:02          3.33M100  8.92M 100  8.92M   0      0  4.17M      0   00:02   00:02          3.33M100  8.92M 100  8.92M   0      0  4.17M      0   00:02   00:02          3.33M100  8.92M 100  8.92M   0      0  4.17M      0   00:02   00:02          3.33M
+  0      0   0      0   0      0      0      0                              0 26  8.92M  26  2.40M   0      0  2.40M      0   00:03   00:01   00:02  2.40M100  8.92M 100  8.92M   0      0  7.42M      0   00:01   00:01          2.40M100  8.92M 100  8.92M   0      0  7.41M      0   00:01   00:01          2.40M100  8.92M 100  8.92M   0      0  7.40M      0   00:01   00:01          2.40M
 seat download hash verified: sha256=fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11 matches the F-Droid index pin
 Performing Streamed Install
 Success
 adb_install_rc=0 (aurora-store-4.8.4.apk)
 SEAT: INSTALLED com.aurora.store (aurora-store-4.8.4.apk sha256=fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11) - present BEFORE the live window opens
+
+########## .pv-evidence-final/07b2-live-egress.txt ##########
+===== 07b2 production WAKE live window + steady egress (v5.1) =====
+-- steady egress (input egress=steady) --
+-- WebShare pinned direct proxy - authorize this runner IP host-side --
+runner public ip: 20.102.103.115
+ip authorization list: http=200
+deleted stale ip authorization id=16305703 http=204 (204 = deleted)
+ip authorization create: http=201
+{"id":16305743,"ip_address":"20.102.103.115","created_at":"2026-11-21T05:10:47.309132Z","last_used_at":null} <- create response (truncated)
+pre-check: endpoint host='198.23.243.226' port='6361' (host/port only)
+pre-check: host is a numeric IP - no DNS lookup needed
+pre-check: TCP connect 198.23.243.226:6361 OK
+host probe: egress='<no answer>' expected='198.23.243.226' (diagnostics: curl_exit=7 http=000; curl said: curl: (7) CONNECT tunnel failed, response 402)
+host probe failed/mismatch - guest proxy NOT set; WARP next
+-- WARP fallback --
+warp install/connect rc=0 (attempt 1; log tail:)
+Success
+Status update: Disconnected
+Reason: Manual Disconnection
+cloudflare trace after WARP: warp=on
+EGRESS: WARP (unsteady fallback - shared Cloudflare pool IP)
+-- live view --
+live window: 60 min
+/home/runner/work/cloud-android-probe/cloud-android-probe/.pv-liveview/cloudflared: OK
+cloudflared version 2026.10.7 (built 2026-10-30-17:05 UTC)
+per-run token generated
+slideshow server started (pid 46143)
+ws-scrcpy install failed - slideshow carries (npm log:)
+npm error path /home/runner/work/cloud-android-probe/cloud-android-probe/.pv-liveview/wss/node_modules/wrtc
+npm error command failed
+npm error command sh -c node scripts/download-prebuilt.js
+npm error /bin/sh: 1: node-pre-gyp: not found
+npm error A complete log of this run can be found in: /home/runner/.npm/_logs/2026-11-21T05_11_20_738Z-debug-0.log
+gate self-test: 404
+live health OK (poll 1)
+live public poll 1: http=000
+live public poll 2: http=200
+LIVE: url=https://under-relation-slowly-personalized.trycloudflare.com/52XtU_X-uh_cBWmlcWboGa30J4JTeeQXZ2415CvZZgo/fallback/ token=52XtU_X-uh_cBWmlcWboGa30J4JTeeQXZ2415CvZZgo mode=slideshow window=60min expires=end of this live window (the tunnel is killed in this step) fallback=https://under-relation-slowly-personalized.trycloudflare.com/52XtU_X-uh_cBWmlcWboGa30J4JTeeQXZ2415CvZZgo/fallback/ control=tap + buttons + text on the page
+LIVE PUBLISH: live link published to branch phonevault-live (live-now.txt) - readable during the window from that branch's raw live-now.txt
+LIVE: window complete (60 min)
+LIVE PUBLISH: tombstone published to branch phonevault-live (window closed 2026-11-21T06:12:02Z)
+live view processes stopped
+
+########## .pv-evidence-final/07c-wake2.txt ##########
+===== 7c production WAKE part 2 (v4.3): app side-load, second reboot, identity verdict, state re-pack =====
+lineage posture carried into the outgoing certificate: userdata_posture=fstab-unencrypted-v1 (read from the restored pack's certificate via part 1; the outgoing pack must seal the SAME value or the next wake would patch-or-skip on a lie)
+wake handoff read: android_id=1c2255179b74f810 marker_token=pv1-20261120215905-f54057a4 marker_guest_path=/data/local/tmp/phonevault-marker.txt capsule_sha256=7658522efae5c1250d142fe7d566ad83de6ac4336b5e5df2862ec177b6077e40 session=4 born_utc=2026-11-20T21:58:12Z control_pre_apply_id=1c2255179b74f810 post_apply_id=1c2255179b74f810
+-- DATA-PERSIST SELF-TEST (v5.9): sentinel planted in the guest at a fixed /data path by the PREVIOUS run's pack phase; read BEFORE any app install in this verdict phase. YES = /data content crossed the wake; NO = /data was re-initialised (only the identity capsule carried); UNGRADED = the restored pack predates the sentinel writer --
+DATA_PERSIST: YES (sentinel for session 4 found at /data/local/tmp/pv-datapersist-sentinel.txt - guest /data content survived the pack/restore cycle; raw: pv-datapersist session=4 planted_utc=2026-11-21T04:42:01Z run_id=44861961923)
+-- V60 PRODUCTION POSTURE CHECK + ACCOUNT STATE: the guest's crypto state, its governing fstab /data line, and the account list AMS serves - all read after capsule apply + the survival reboot, before any app install in this run --
+POSTURE CHECK (guest): ro.crypto.state=unsupported ro.crypto.type=
+POSTURE CHECK (guest): vendor fstab /data line: /dev/block/vdc   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,reservedsize=128M,fsverity,latemount
+ACCOUNT_STATE: 0 account(s) listed by AMS after capsule apply + reboot 2 (no expectation carried - the restored pack's capsule_accounts is not planted)
+-- APP side-load (v4.3): hash-pinned set from the repo apps manifest, installed BEFORE the survival reboot; install-every-wake by design (V43-NOTES persistence verdict); app outcomes never touch the identity verdict --
+apps manifest in use: phonevault/apps/apps.txt
+APP: PREEXISTING org.fdroid.fdroid - present BEFORE this wake's install phase (cross-run persistence evidence; the install is still re-applied)
+hash verified for F-Droid.apk: sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52 matches the manifest
+Performing Streamed Install
+Success
+adb_install_rc=0 (F-Droid.apk)
+APP: INSTALLED org.fdroid.fdroid (F-Droid.apk sha256=19d51fad482239f6df6a99120e34513667e9a86d136dafdc4a211a68c3327b52)
+## Network stats: elapsed time=29ms (0ms mobile, 0ms wifi, 29ms not connected)
+-rw-r--r-- 1 runner runner 229419 Nov 21 06:12 .pv-screencap.png
+-- SECOND reboot (plain guest reboot): the run No.19 standard - a wake counts only if the applied identity survives it --
+reboot_rc=0
+wait_for_device_rc=0
+reboot poll 1: sys.boot_completed=''
+reboot poll 2: sys.boot_completed='1'
+reboot_wait_result: sys.boot_completed=1 reached
+android_id_AFTER_reboot2=1c2255179b74f810
+marker_AFTER_reboot2 (/data/local/tmp/phonevault-marker.txt)=pv1-20261120215905-f54057a4
+APP: SURVIVED reboot 2 - org.fdroid.fdroid still installed after the survival reboot
+-- DATA-PERSIST SELF-TEST (v5.9): planting the sentinel the NEXT wake will grade (fixed /data path; written while the guest is still up, before the graceful stop, so it rides this run's re-pack) --
+sentinel_write_rc=0
+sentinel readback: 'pv-datapersist session=5 planted_utc=2026-11-21T06:12:47Z run_id=44869303405'
+sentinel planted for session 5 (the outgoing pack's certificate will carry datapersist_sentinel=planted)
+-- V60 PRODUCTION ACCOUNT PHASE (FINAL, job #8): re-capture the EXTENDED identity capsule (identity files + accounts_de.db + accounts_ce.db as an atomic pair + sync/accounts.xml + the whole GSF dir + the whole GMS dir; the keystore is NOT carried - CAPSULE-ACCOUNT-DESIGN.md section 6) on EVERY successful wake, because GMS refreshes authtokens during the live window - a birth-frozen capsule would seal stale tokens. The mechanism this production form carries was proven live on the v60-test lineage (grading wake 43602751221: the account sealed into the capsule was listed by AMS after capsule apply + reboot 2). Three proven pieces, folded in by the r8-r11 deltas: (1) CAPTURE = the r9 adb-root-pull primitive with a host paircheck gate (this step inherits NO root state - adbd root from wake part 1 does not survive reboot 2 - so root is re-established and verified uid=0 in-step before any account read; the earlier snapshot/stop capture designs were removed after failing live and are NOT in this phase); (2) ASSEMBLY = the r11 MERGE construction - the extended capsule is built on top of the phone's incoming capsule, never from a fresh staging tree, with the r10 guest source facts printed at assembly and the GSF/GMS dirs staged by the guest root tar; (3) CHECK = the full table in its STRICT production form: every expected item printed with present/absent AND origin, ALL missing required items collected and named at once, and NO documented-absence exception - on an enrolled production guest sync/accounts.xml, the GSF dir, gservices.db and the GMS dir are all definitionally present, so an absent source is itself a seal failure. Any failure keeps the previous capsule byte-unchanged and seals capsule_accounts=absent - never a false plant; planted seals only for a verified capture holding >= 1 real account --
+-- account capture root (r9): step 17 inherits NO root state (adbd root established by wake part 1 does not survive this step's reboot 2; the r8 test phase's unprivileged shell context is the direct cause of both r8 capture failures - design section 13.2). Re-establish adb root here, in-step, exactly as steps 14/15 do inside theirs, and verify uid=0 before any account read --
+restarting adbd as root
+adb_root_rc=0
+account capture root poll 1: id='uid=0(root) gid=0(root) groups=0(root),1004(input),1007(log),1011(adb),1015(sdcard_rw),1028(sdcard_r),1078(ext_data_rw),1079(ext_obb_rw),3001(net_bt_admin),3002(net_bt),3003(inet),3006(net_bw_stats),3009(readproc),3011(uhid),3012(readtracefs) context=u:r:su:s0'
+ACCOUNT CAPTURE: adb root verified (uid=0 shell in this step)
+keystore probe (facts for the keystore question; the keystore is NOT carried by this capsule):
+persistent.sqlite
+timestamp
+vpnprofilestore.sqlite
+gms/gsf guest sizes:
+40	/data/data/com.google.android.gms
+1	/data/data/com.google.android.gsf
+/data/system_de/0/accounts_de.db 1000 1000 660
+/data/system_ce/0/accounts_ce.db 1000 1000 660
+stat: '/data/system/sync/accounts.xml': No such file or directory
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  40960 2026-11-20 21:58 /data/system_ce/0/accounts_ce.db
+-rw-rw---- 1 system system u:object_r:system_data_file:s0  65536 2026-11-20 21:58 /data/system_de/0/accounts_de.db
+-- account capture (r9): ONE primitive - the identity capsule's own adb-root pull, the capture that has worked on every wake since birth (design section 13.1). No framework stop and no guest-side snapshot open exist anywhere in this phase. The pull set is exact: accounts_de.db + accounts_ce.db (+ their -wal/-shm siblings when present) and /data/system/sync/accounts.xml when present; the GSF/GMS whole dirs enter at assembly below via a guest root tar of the source paths (a plain tree pull does not preserve uid/gid/mode; the root tar does - the identity capsule's own tree method). The host paircheck (the production verifier above: sqlite integrity_check on both files + DE/CE (id,name,type) identity) is the gate - a torn or inconsistent pull fails the check and is re-pulled, never sealed; consistency is checked, not assumed from a quiesce. Capture runs on an idle, settled guest (post-verdict, no enrolment in flight in this step) --
+-- adb-root pull attempt 1 of 3 --
+/data/system_de/0/accounts_de.db: 1 file pulled, 0 skipped. 24.0 MB/s (65536 bytes in 0.003s)
+/data/system_ce/0/accounts_ce.db: 1 file pulled, 0 skipped. 6.0 MB/s (40960 bytes in 0.007s)
+sync/accounts.xml: absent on this guest at capture (the strict table below treats this as a seal failure on an enrolled production guest)
+PVACC integrity de: ok
+PVACC integrity ce: ok
+PVACC de accounts: 0 ce accounts: 0
+PVACC_RESULT: VERIFY_OK
+ACCOUNT CAPTURE PRIMITIVE: adb-root-pull (attempt 1, paircheck OK - integrity ok on both DBs, DE/CE (id,name,type) rows identical)
+ACCOUNT CAPTURE: verified via adb-root-pull on attempt 1 (the DB copies in pv-acct passed host paircheck; 0 account(s) in the captured DBs; sync/accounts.xml: absent)
+-- capture normalisation (production-only refinement, design section 16): fold any -wal content of the pulled host copies into the main DB files and drop the journal siblings, so the copies the assembly stages are standalone-complete. On the test lineage this fold happened inside the plant tool; production has no plant, so it happens here, on the verified copies, before assembly. Without it, a main-file-only overlay could strand un-checkpointed account rows in a journal that does not ride the capsule --
+PVACCNORM pv-acct/accounts_de.db journal_mode=delete integrity=ok
+PVACCNORM pv-acct/accounts_ce.db journal_mode=delete integrity=ok
+-- capsule assembly (r11 MERGE construction, production form): the extended capsule is assembled ON TOP OF THE INCOMING CAPSULE, not rebuilt from a fresh staging tree. The incoming capsule is /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar on this host: wake part 1 extracted the verified pinned pack into the hand-made AVD folder, gate-verified this file's sha256 against the certificate's capsule_sha256 BEFORE boot, and pushed it from exactly this path for the capsule apply - so at this point in the wake it is still the incoming capsule (this phase overwrites it only on the success path below), and its extracted form IS retained; no re-extraction from the pack is needed. The phase pushes it to the guest and extracts it as root into the staging tree FIRST (the tar records uid/gid/mode; the root extract restores them), so settings_secure.xml + the marker are present BY CONSTRUCTION. Overlays then land on that base by path: the paircheck-verified DB copies (staging paths only, canonical recorded uid/gid/mode - they never touch the canonical DB paths in this design), sync/accounts.xml when captured, and the GSF/GMS whole dirs via the guest root tar. On later wakes the merge base is the previous wake's EXTENDED capsule, so the overlay refreshes the account set by path while identity and previously carried files persist by construction - exactly the permanence semantics the role needs. The copy is live; the DB pair - the sealed content - is the paircheck-verified pull --
+ACCOUNT ASSEMBLY INCOMING CAPSULE: /home/runner/.android/avd/factoryphone.avd/pv-capsule.tar sha256=7658522efae5c1250d142fe7d566ad83de6ac4336b5e5df2862ec177b6077e40 (gate-verified against the certificate in wake part 1; this listing is the merge base and the origin evidence for the identity rows of the strict table):
+data/system/users/0/settings_secure.xml
+data/local/tmp/phonevault-marker.txt
+/home/runner/.android/avd/factoryphone.avd/pv-capsule.tar: 1 file pushed, 0 skipped. 41.5 MB/s (14336 bytes in 0.000s)
+incoming_capsule_push_rc=0
+-- account assembly source facts (r10, guest ls as root):
+drwx--x--x 25 u0_a132 u0_a132 4096 2026-11-21 00:04 /data/data/com.google.android.gms
+drwx------  7 u0_a132 u0_a132 4096 2026-11-20 22:08 /data/data/com.google.android.gsf
+1	/data/data/com.google.android.gsf
+40	/data/data/com.google.android.gms
+ACCOUNT ASSEMBLY SOURCE FACT: gsf=present gms=present (guest /data/data dirs as root; production strict form: on an enrolled guest BOTH dirs are required - a source fact of absent is itself a seal failure, collected by the strict table below)
+pv_base_extract_rc=0
+-rw-rw-rw- 1 root   root      28 2026-11-20 21:59 /data/local/tmp/pv-capstage/data/local/tmp/phonevault-marker.txt
+-rw------- 1 system system 11658 2026-11-20 21:59 /data/local/tmp/pv-capstage/data/system/users/0/settings_secure.xml
+pv-acct/accounts_de.db: 1 file pushed, 0 skipped. 24.0 MB/s (65536 bytes in 0.003s)
+pv-acct/accounts_ce.db: 1 file pushed, 0 skipped. 222.6 MB/s (40960 bytes in 0.000s)
+-rw-rw---- 1 system system u:object_r:shell_data_file:s0  40960 2026-11-21 06:12 /data/local/tmp/pv-capstage/data/system_ce/0/accounts_ce.db
+-rw-rw---- 1 system system u:object_r:shell_data_file:s0  65536 2026-11-21 06:12 /data/local/tmp/pv-capstage/data/system_de/0/accounts_de.db
+-- account assembly dirs tar (r10): guest root tar of the present source dirs, extracted into the staging tree ON TOP OF the capsule base (the tar records uid/gid/mode; the root extract restores them; an explicitly named source dir yields at least its directory entry, so a present-but-empty dir still lands in the staging tree and in the capsule tar) --
+pv_dirs_tar_rc=0
+-rw-rw-rw- 1 root root 40481280 2026-11-21 06:12 /data/local/tmp/pv-dirs.tar
+pv_dirs_extract_rc=0
+-- account assembly staged result:
+com.google.android.gms
+com.google.android.gsf
+1	/data/local/tmp/pv-capstage/data/data/com.google.android.gsf
+41	/data/local/tmp/pv-capstage/data/data/com.google.android.gms
+extended_capsule_tar_rc=0
+[ 88%] /data/local/tmp/pv-capsule.tar
+ACCOUNT PHASE: FAILED - extended capsule pull failed or empty; the previous capsule is carried unchanged and the outgoing certificate seals capsule_accounts=absent
+framework was never stopped in this run (capture primitive: adb-root-pull - no quiesce exists in this design) - no restart to perform or prove
+ACCOUNT CAPTURE CONTROL: 0 account(s) listed by AMS in this run after the re-capture (the live guest's account state was not disturbed by the capture)
+OK: killing emulator, bye bye
+OK
+emu_kill_rc=0
+shutdown poll 1: still alive: qemu-system present
+graceful stop confirmed at poll 2
+host sync done
+/dev/root       145G   59G   86G  41% /
+-- AVD folder listing BEFORE pack --
+total 2.5G
+-rw------- 1 runner runner    0 Nov 21 06:12 bootcompleted.ini
+-rw-r--r-- 1 runner runner  66M Nov 21 05:09 cache.img
+-rw-r--r-- 1 runner runner 193K Nov 21 05:09 cache.img.qcow2
+-rw-r--r-- 1 runner runner  310 Nov 20 21:59 capsule-manifest.txt
+-rw-r--r-- 1 runner runner 3.8K Nov 20 21:58 config.ini
+drwxr-xr-x 3 runner runner 4.0K Nov 21 05:09 data
+-rw-r--r-- 1 runner runner  282 Nov 21 05:09 emu-launch-params.txt
+-rw-r--r-- 1 runner runner  113 Nov 21 06:12 emulator-user.ini
+-rw------- 1 runner runner  18M Nov 20 21:58 encryptionkey.img
+-rw-r--r-- 1 runner runner 1.7M Nov 21 06:12 encryptionkey.img.qcow2
+-rw-r--r-- 1 runner runner 4.2K Nov 21 05:09 hardware-qemu.ini
+-rw-r--r-- 1 runner runner 1.8M Nov 21 05:09 initrd
+drwxr-xr-x 3 runner runner 4.0K Nov 21 05:10 modem_simulator
+-rw-r--r-- 1 runner runner    0 Nov 21 05:09 multiinstance.lock
+-rw-r--r-- 1 runner runner   38 Nov 21 05:09 netsim.ini
+-rw-r--r-- 1 runner runner 1.4K Nov 21 04:42 phonevault-version.txt
+-rw-r--r-- 1 runner runner  14K Nov 20 21:59 pv-capsule.tar
+-rw-r--r-- 1 runner runner    1 Nov 21 05:09 qemu-version.txt
+-rw-r--r-- 1 runner runner    0 Nov 21 05:09 read-snapshot.txt
+drwxr-xr-x 2 runner runner 4.0K Nov 21 06:12 tmpAdbCmds
+-rw------- 1 runner runner 6.2M Nov 20 21:58 userdata-qemu.img
+-rw-r--r-- 1 runner runner 2.5G Nov 21 06:12 userdata-qemu.img.qcow2
+-rw-r--r-- 1 runner runner    9 Nov 21 05:09 version_num.cache
+-- phonevault-version.txt (in pack) --
+avd_name=factoryphone
+system_image=system-images;android-34;google_apis;x86_64
+emulator_version=Android emulator version 37.3.10.0 (build_id 16970787) (CL:N/A)
+emulator_pkg_revision=37.3.10
+system_image_revision=14
+production=1
+session=5
+born_utc=2026-11-20T21:58:12Z
+packed_utc=2026-11-21T06:13:02Z
+android_id=1c2255179b74f810
+marker_token=pv1-20261120215905-f54057a4
+marker_ok=1
+marker_guest_path=/data/local/tmp/phonevault-marker.txt
+phone=one
+route=wake-v4.0
+identity_capsule=android_id + marker + settings_secure.xml tar (adb root capture; re-applied pre-read on wakes)
+capsule_sha256=7658522efae5c1250d142fe7d566ad83de6ac4336b5e5df2862ec177b6077e40
+settings_secure_md5_birth=f1483db9ef53a639e1bb0e192c8306c7
+datapersist_sentinel=planted
+userdata_posture=fstab-unencrypted-v1
+capsule_accounts=absent
+largest_userdata_file=userdata-qemu.img.qcow2
+largest_userdata_size_bytes=2583887872
+largest_userdata_sha256=9b4c28a2a5bf00874975a25550730e35d2dec4a14c0ee0c079c59ef5f85f14c6
+packed_file: userdata-qemu.img.qcow2 2583887872 bytes
+packed_file: userdata-qemu.img 6488064 bytes
+packed_file: encryptionkey.img.qcow2 1769472 bytes
+packed_file: encryptionkey.img 18874368 bytes
+packed_file: config.ini 3879 bytes
+packed_file: emulator-user.ini 113 bytes
+packed_file: hardware-qemu.ini 4234 bytes
+packed_file: pv-capsule.tar 14336 bytes
+packed_file: capsule-manifest.txt 310 bytes
+packed_file: phonevault-version.txt (this file)
+pack set: userdata-qemu.img.qcow2 userdata-qemu.img encryptionkey.img.qcow2 encryptionkey.img config.ini emulator-user.ini hardware-qemu.ini pv-capsule.tar capsule-manifest.txt phonevault-version.txt
+excluded by construction (never in the candidate list): cache.img, cache.img.qcow2, snapshots/, *.lock
+tar_rc=0
+-rw-r--r-- 1 runner runner 2.5G Nov 21 06:13 phonevault-state.tar
+seal check: sha256(userdata-qemu.img.qcow2) recomputed FROM the finished tar=9b4c28a2a5bf00874975a25550730e35d2dec4a14c0ee0c079c59ef5f85f14c6 vs certificate=9b4c28a2a5bf00874975a25550730e35d2dec4a14c0ee0c079c59ef5f85f14c6
+PACK_OK=1 - production pack phonevault-state.tar complete (tar_rc=0, seal verified from the tar)
+pack_sha256=00502583cf491e6042bee2546511e9630469dfc5de5ad752df70832b4bdb987c
+WAKE: SAME PHONE - capsule android_id 1c2255179b74f810 re-applied by root after the disk restore (the wake boot had woken as 1c2255179b74f810) and SURVIVED the extra reboot; marker restored from /data/local/tmp/phonevault-marker.txt and survived; state RE-PACKED as session 5 with the same capsule and uploaded as the new phonevault-avd-state (pack_sha256=00502583cf491e6042bee2546511e9630469dfc5de5ad752df70832b4bdb987c) - the NEXT wake pins THIS run
+
+########## .pv-evidence-final/07d-vault.txt ##########
+===== 7d vault store (v5.4): pack -> the phone's own HF vault dataset, directly from this runner =====
+vault_repo=jasveerai92/phonevault-one phone=one
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+  ...robe/phonevault-state.tar:   0%|          | 1.97MB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar:   0%|          | 1.97MB / 2.61GB            [A[AProcessing Files (0 / 1)      :   0%|          | 1.97MB / 2.61GB,  195kB/s  
+New Data Upload               :   3%|▎         | 1.97MB / 67.0MB,  195kB/s  [A
+
+  ...robe/phonevault-state.tar:   1%|          | 30.9MB / 2.61GB            [A[AProcessing Files (0 / 1)      :   1%|          | 30.9MB / 2.61GB, 3.05MB/s  
+New Data Upload               :  26%|██▋       | 17.7MB / 67.0MB, 1.75MB/s  [A
+
+  ...robe/phonevault-state.tar:   4%|▍         |  101MB / 2.61GB            [A[AProcessing Files (0 / 1)      :   4%|▍         |  101MB / 2.61GB, 9.89MB/s  
+New Data Upload               :  48%|████▊     | 32.4MB / 67.0MB, 3.18MB/s  [A
+
+  ...robe/phonevault-state.tar:   7%|▋         |  171MB / 2.61GB            [A[AProcessing Files (0 / 1)      :   7%|▋         |  171MB / 2.61GB, 16.7MB/s  
+New Data Upload               :  66%|██████▌   | 44.2MB / 67.0MB, 4.31MB/s  [A
+
+  ...robe/phonevault-state.tar:   8%|▊         |  197MB / 2.61GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  197MB / 2.61GB, 19.1MB/s  
+New Data Upload               :  44%|████▍     | 59.0MB /  134MB, 5.71MB/s  [A
+
+  ...robe/phonevault-state.tar:   8%|▊         |  205MB / 2.61GB            [A[AProcessing Files (0 / 1)      :   8%|▊         |  205MB / 2.61GB, 19.7MB/s  
+New Data Upload               :  50%|████▉     | 67.0MB /  134MB, 6.44MB/s  [A
+
+  ...robe/phonevault-state.tar:  11%|█▏        |  296MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  11%|█▏        |  296MB / 2.61GB, 28.4MB/s  
+New Data Upload               :  84%|████████▍ |  112MB /  134MB, 10.8MB/s  [A
+
+  ...robe/phonevault-state.tar:  16%|█▌        |  410MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  16%|█▌        |  410MB / 2.61GB, 39.1MB/s  
+New Data Upload               : 100%|█████████▉|  134MB /  134MB, 12.8MB/s  [A
+
+  ...robe/phonevault-state.tar:  20%|█▉        |  513MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  20%|█▉        |  513MB / 2.61GB, 48.8MB/s  
+
+  ...robe/phonevault-state.tar:  23%|██▎       |  594MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  594MB / 2.61GB, 56.1MB/s  
+
+  ...robe/phonevault-state.tar:  23%|██▎       |  598MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  23%|██▎       |  598MB / 2.61GB, 55.9MB/s  
+
+  ...robe/phonevault-state.tar:  25%|██▌       |  654MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  25%|██▌       |  654MB / 2.61GB, 60.7MB/s  
+New Data Upload               :  93%|█████████▎|  188MB /  201MB, 17.4MB/s  [A
+
+  ...robe/phonevault-state.tar:  26%|██▌       |  667MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  26%|██▌       |  667MB / 2.61GB, 61.4MB/s  
+New Data Upload               :  75%|███████▌  |  201MB /  268MB, 18.6MB/s  [A
+
+  ...robe/phonevault-state.tar:  28%|██▊       |  718MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  718MB / 2.61GB, 65.7MB/s  
+New Data Upload               :  75%|███████▍  |  250MB /  335MB, 23.1MB/s  [A
+
+  ...robe/phonevault-state.tar:  28%|██▊       |  736MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  28%|██▊       |  736MB / 2.61GB, 66.8MB/s  
+New Data Upload               :  80%|███████▉  |  268MB /  335MB, 24.6MB/s  [A
+
+  ...robe/phonevault-state.tar:  29%|██▉       |  757MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  29%|██▉       |  757MB / 2.61GB, 68.1MB/s  
+New Data Upload               :  86%|████████▌ |  287MB /  335MB, 26.1MB/s  [A
+
+  ...robe/phonevault-state.tar:  32%|███▏      |  827MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  32%|███▏      |  827MB / 2.61GB, 74.1MB/s  
+New Data Upload               :  94%|█████████▍|  315MB /  335MB, 28.5MB/s  [A
+
+  ...robe/phonevault-state.tar:  34%|███▍      |  886MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  34%|███▍      |  886MB / 2.61GB, 79.0MB/s  
+New Data Upload               : 100%|█████████▉|  335MB /  335MB, 30.2MB/s  [A
+
+  ...robe/phonevault-state.tar:  35%|███▌      |  927MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  35%|███▌      |  927MB / 2.61GB, 82.1MB/s  
+New Data Upload               : 100%|█████████▉|  335MB /  335MB, 29.9MB/s  [A
+
+  ...robe/phonevault-state.tar:  35%|███▌      |  927MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  35%|███▌      |  927MB / 2.61GB, 81.3MB/s  
+New Data Upload               : 100%|█████████▉|  335MB /  335MB, 29.6MB/s  [A
+
+  ...robe/phonevault-state.tar:  36%|███▌      |  933MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  36%|███▌      |  933MB / 2.61GB, 81.1MB/s  
+
+  ...robe/phonevault-state.tar:  38%|███▊      |  990MB / 2.61GB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  990MB / 2.61GB, 85.7MB/s  
+New Data Upload               :  88%|████████▊ |  352MB /  402MB, 30.6MB/s  [A
+
+  ...robe/phonevault-state.tar:  41%|████      | 1.06GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  41%|████      | 1.06GB / 2.61GB, 91.6MB/s  
+New Data Upload               :  95%|█████████▍|  381MB /  402MB, 33.1MB/s  [A
+
+  ...robe/phonevault-state.tar:  42%|████▏     | 1.09GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  42%|████▏     | 1.09GB / 2.61GB, 93.4MB/s  
+New Data Upload               : 100%|█████████▉|  402MB /  402MB, 34.7MB/s  [A
+
+  ...robe/phonevault-state.tar:  44%|████▍     | 1.16GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  44%|████▍     | 1.16GB / 2.61GB, 98.6MB/s  
+
+  ...robe/phonevault-state.tar:  48%|████▊     | 1.26GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  48%|████▊     | 1.26GB / 2.61GB,  107MB/s  
+
+  ...robe/phonevault-state.tar:  51%|█████     | 1.34GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  51%|█████     | 1.34GB / 2.61GB,  113MB/s  
+
+  ...robe/phonevault-state.tar:  51%|█████▏    | 1.34GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  51%|█████▏    | 1.34GB / 2.61GB,  113MB/s  
+
+  ...robe/phonevault-state.tar:  51%|█████▏    | 1.34GB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar:  52%|█████▏    | 1.34GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  52%|█████▏    | 1.34GB / 2.61GB,  111MB/s  
+New Data Upload               : 100%|██████████|  402MB /  402MB, 32.8MB/s  [A
+
+  ...robe/phonevault-state.tar:  52%|█████▏    | 1.34GB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar:  54%|█████▎    | 1.40GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  54%|█████▎    | 1.40GB / 2.61GB,  114MB/s  
+
+  ...robe/phonevault-state.tar:  54%|█████▍    | 1.42GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  54%|█████▍    | 1.42GB / 2.61GB,  114MB/s  
+
+  ...robe/phonevault-state.tar:  57%|█████▋    | 1.49GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  57%|█████▋    | 1.49GB / 2.61GB,  120MB/s  
+
+  ...robe/phonevault-state.tar:  58%|█████▊    | 1.53GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  58%|█████▊    | 1.53GB / 2.61GB,  122MB/s  
+
+  ...robe/phonevault-state.tar:  60%|██████    | 1.57GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  60%|██████    | 1.57GB / 2.61GB,  125MB/s  
+New Data Upload               :  88%|████████▊ |  412MB /  469MB, 31.9MB/s  [A
+
+  ...robe/phonevault-state.tar:  62%|██████▏   | 1.63GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  62%|██████▏   | 1.63GB / 2.61GB,  129MB/s  
+New Data Upload               :  93%|█████████▎|  436MB /  469MB, 33.8MB/s  [A
+
+  ...robe/phonevault-state.tar:  66%|██████▌   | 1.72GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  66%|██████▌   | 1.72GB / 2.61GB,  136MB/s  
+New Data Upload               :  98%|█████████▊|  462MB /  469MB, 35.9MB/s  [A
+
+  ...robe/phonevault-state.tar:  68%|██████▊   | 1.77GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  68%|██████▊   | 1.77GB / 2.61GB,  140MB/s  
+New Data Upload               : 100%|█████████▉|  469MB /  469MB, 36.2MB/s  [A
+
+  ...robe/phonevault-state.tar:  69%|██████▉   | 1.81GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  69%|██████▉   | 1.81GB / 2.61GB,  142MB/s  
+
+  ...robe/phonevault-state.tar:  73%|███████▎  | 1.92GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  73%|███████▎  | 1.92GB / 2.61GB,  150MB/s  
+
+  ...robe/phonevault-state.tar:  77%|███████▋  | 2.01GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  | 2.01GB / 2.61GB,  157MB/s  
+
+  ...robe/phonevault-state.tar:  81%|████████▏ | 2.12GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ | 2.12GB / 2.61GB,  166MB/s  
+
+  ...robe/phonevault-state.tar:  86%|████████▌ | 2.25GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  86%|████████▌ | 2.25GB / 2.61GB,  176MB/s  
+
+  ...robe/phonevault-state.tar:  90%|█████████ | 2.35GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  90%|█████████ | 2.35GB / 2.61GB,  183MB/s  
+New Data Upload               : 100%|██████████|  469MB /  469MB, 34.3MB/s  [A
+
+  ...robe/phonevault-state.tar:  94%|█████████▍| 2.46GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  94%|█████████▍| 2.46GB / 2.61GB,  191MB/s  
+
+  ...robe/phonevault-state.tar:  94%|█████████▍| 2.46GB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar:  97%|█████████▋| 2.52GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  97%|█████████▋| 2.52GB / 2.61GB,  193MB/s  
+New Data Upload               :  86%|████████▋ |  496MB /  574MB, 35.7MB/s  [A
+
+  ...robe/phonevault-state.tar:  99%|█████████▉| 2.58GB / 2.61GB            [A[AProcessing Files (0 / 1)      :  99%|█████████▉| 2.58GB / 2.61GB,  197MB/s  
+New Data Upload               :  96%|█████████▌|  548MB /  574MB, 40.0MB/s  [A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 2.61GB / 2.61GB,  197MB/s  
+New Data Upload               : 100%|█████████▉|  574MB /  574MB, 41.9MB/s  [A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 2.61GB / 2.61GB,  192MB/s  
+New Data Upload               : 100%|█████████▉|  574MB /  574MB, 40.8MB/s  [A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[AProcessing Files (0 / 1)      : 100%|█████████▉| 2.61GB / 2.61GB,  187MB/s  
+New Data Upload               : 100%|██████████|  574MB /  574MB, 39.7MB/s  [A
+
+
+Validating                    :           |   0%            [A[A[A
+
+
+Validating                    :           |   0%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    :           |   0%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    :           |   0%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ████████  |  80%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ████████  |  80%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ████████  |  80%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ████████  |  80%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ████████  |  80%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ████████  |  80%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ████████  |  80%            [A[A[A
+
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            [A[A
+
+
+Validating                    : ██████████| 100%            [A[A[AProcessing Files (0 / 1)      : 100%|█████████▉| 2.61GB / 2.61GB,  172MB/s  
+New Data Upload               : 100%|██████████|  574MB /  574MB, 36.4MB/s  
+Validating                    : ██████████| 100%            
+  ...robe/phonevault-state.tar: 100%|█████████▉| 2.61GB / 2.61GB            
+VAULT PUT OK repo=jasveerai92/phonevault-one prefix=pkg-00502583 pack_sha256=00502583cf491e6042bee2546511e9630469dfc5de5ad752df70832b4bdb987c bytes=2611056640
+VAULT_OK=1
 
 ########## .pv-evidence-final/08a-roundtrip2-n.txt ##########
 ===== 8a roundtrip2 attempt N: no-lock birth (EncryptUserData guest feature DISABLED at both boots) =====
