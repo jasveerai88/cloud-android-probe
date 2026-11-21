@@ -4416,17 +4416,17 @@ jobs:
                   pv_tun_launch() { O="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:8080"; case "$1" in ssh) ssh $O serveo.net > "$2" 2>&1 & ;; ssh2) ssh $O nokey@localhost.run > "$2" 2>&1 & ;; *) "$LV/cloudflared" tunnel --no-autoupdate --url http://127.0.0.1:8080 > "$2" 2>&1 & ;; esac; echo $! > "$LV/cf.pid"; }
                   pv_tun_wait() { TUN=""; for i in $(seq 1 30); do if [ "$1" = "ssh" ] || [ "$1" = "ssh2" ]; then TUN="$(grep 'Forwarding HTTP traffic from' "$2" 2>/dev/null | grep -oE 'https://[a-zA-Z0-9.-]+' | head -1)"; else TUN="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$2" 2>/dev/null | head -1)"; fi; [ -n "$TUN" ] && break; sleep 2; done; }
                   TUN_KIND=""
-                  pv_tun_launch cf "$LV/cf.log"; pv_tun_wait cf "$LV/cf.log"
-                  if [ -n "$TUN" ]; then TUN_KIND="cf"; fi
-                  if [ -z "$TUN" ]; then
-                    echo "cloudflared produced no trycloudflare URL in 60s (cf log tail:)"; tail -10 "$LV/cf.log" 2>/dev/null
-                    pv_tun_launch ssh "$LV/ssh.log"; pv_tun_wait ssh "$LV/ssh.log"
-                    if [ -n "$TUN" ]; then TUN_KIND="ssh"; echo "LIVE: cloudflared failed - fell back to SSH tunnel (serveo)"; fi
-                  fi
+                  pv_tun_launch ssh "$LV/ssh.log"; pv_tun_wait ssh "$LV/ssh.log"
+                  if [ -n "$TUN" ]; then TUN_KIND="ssh"; fi
                   if [ -z "$TUN" ]; then
                     echo "serveo produced no forwarding URL in 60s (ssh log tail:)"; tail -10 "$LV/ssh.log" 2>/dev/null
+                    pv_tun_launch cf "$LV/cf.log"; pv_tun_wait cf "$LV/cf.log"
+                    if [ -n "$TUN" ]; then TUN_KIND="cf"; echo "LIVE: serveo failed - fell back to cloudflared tunnel"; fi
+                  fi
+                  if [ -z "$TUN" ]; then
+                    echo "serveo + cloudflared produced no URL in 60s (cf log tail:)"; tail -10 "$LV/cf.log" 2>/dev/null
                     pv_tun_launch ssh2 "$LV/ssh2.log"; pv_tun_wait ssh2 "$LV/ssh2.log"
-                    if [ -n "$TUN" ]; then TUN_KIND="ssh2"; echo "LIVE: cloudflared + serveo failed - fell back to SSH tunnel (localhost.run)"; fi
+                    if [ -n "$TUN" ]; then TUN_KIND="ssh2"; echo "LIVE: serveo + cloudflared failed - fell back to SSH tunnel (localhost.run)"; fi
                   fi
                   if [ -z "$TUN" ]; then echo "LIVE: FAILED - all tunnels failed, no URL in 60s each (ssh2 log tail:)"; tail -10 "$LV/ssh2.log" 2>/dev/null; LVOK=0; fi
                   if [ "$LVOK" = "1" ]; then
