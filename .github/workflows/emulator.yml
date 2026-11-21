@@ -4448,9 +4448,9 @@ jobs:
                 if [ "$LVOK" = "1" ]; then
                   END=$(( ${PUB_TS:-$(date +%s)} + LMIN*60 )); DIED=""
                   OPENED_TS="${LIVE_LINE##*opened=}"
-                  CF_RESTARTS=0; MISS_FB=0; MISS_GATE=0; MISS_WSS=0; MISS_EMU=0
+                  CF_RESTARTS=0; MISS_FB=0; MISS_GATE=0; MISS_WSS=0; MISS_EMU=0; MISS_URL=0
                   while [ "$(date +%s)" -lt "$END" ]; do
-                    # death needs 3 consecutive missed checks (one per ~30s loop pass); a single miss never ends the window
+                    # death needs 3 consecutive missed checks
                     if kill -0 "$(cat "$LV/fb.pid" 2>/dev/null)" 2>/dev/null; then MISS_FB=0; else MISS_FB=$((MISS_FB+1)); fi
                     if [ "$MISS_FB" -ge 3 ]; then DIED="fb"; break; fi
                     if kill -0 "$(cat "$LV/gate.pid" 2>/dev/null)" 2>/dev/null; then MISS_GATE=0; else MISS_GATE=$((MISS_GATE+1)); fi
@@ -4461,7 +4461,9 @@ jobs:
                     fi
                     if [ "$(adb -s emulator-5554 get-state 2>/dev/null | tr -d '\r')" = "device" ]; then MISS_EMU=0; else MISS_EMU=$((MISS_EMU+1)); fi
                     if [ "$MISS_EMU" -ge 3 ]; then DIED="emulator"; break; fi
-                    # tunnel watchdog: restart the active tunnel kind in place
+if curl -s -o "$LV/pub.html" --max-time 10 "$TUN/$TOKEN/fallback/" 2>/dev/null && grep -q 'PhoneVault live view' "$LV/pub.html" 2>/dev/null; then MISS_URL=0; else MISS_URL=$((MISS_URL+1)); fi
+                    if [ "$MISS_URL" -ge 4 ]; then echo "LIVE: url dead 4x - restart tunnel"; kill "$(cat "$LV/cf.pid" 2>/dev/null)" 2>/dev/null; MISS_URL=0; fi
+                                        # tunnel watchdog
                     if ! kill -0 "$(cat "$LV/cf.pid" 2>/dev/null)" 2>/dev/null; then
                       if [ "$CF_RESTARTS" -ge 20 ]; then DIED="tunnel"; break; fi
                       CF_RESTARTS=$((CF_RESTARTS+1))
@@ -4470,7 +4472,7 @@ jobs:
                       if [ -z "$TUN" ]; then echo "LIVE: tunnel restart $CF_RESTARTS ($TUN_KIND) produced no URL in 60s (log tail:)"; tail -10 "$CFLOG" 2>/dev/null; DIED="tunnel"; break; fi
                       LIVE_LINE="LIVE: url=$TUN/$TOKEN/fallback/ token=$TOKEN mode=$VMODE window=${LMIN}min expires=end of this live window opened=$OPENED_TS"
                       if [ -n "$LP_OPEN" ]; then PV_LP_TOKEN="${{ github.token }}" bash phonevault/liveview/live-publish-v53.sh open "$LIVE_LINE"; fi
-                      echo "LIVE: tunnel died - restarted, new url published (restart $CF_RESTARTS of 20)"
+                      echo "LIVE: tunnel restarted (restart $CF_RESTARTS of 20)"
                     fi
                     sleep 30
                   done
